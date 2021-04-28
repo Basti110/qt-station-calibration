@@ -9,6 +9,27 @@ import time
 import threading
 from layout import Ui_MainWindow 
 
+class CountdownThread(QObject):
+    finished = pyqtSignal()
+    countdown = pyqtSignal(int)
+
+    def __init__(self, counter):
+        super().__init__()
+        self.countdown_value = counter
+        print("start countdown")
+
+    def run(self):
+        print("run")
+        for i in range(self.countdown_value, 0, -1):
+            self.countdown.emit(i)
+            #print(i)
+            time.sleep(1)
+        self.countdown.emit(0)
+        self.finished.emit()
+        #self.count_class.thread.countdown = 0
+        #self.count_class.thread.box_is_active = True 
+        #self.count_class.set_slider_values()
+
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
@@ -25,6 +46,7 @@ class VideoThread(QThread):
 
     def run(self):
         # capture from web cam
+        print("run video")
         cap1 = cv2.VideoCapture("./out1.avi")
         cap2 = cv2.VideoCapture("./out2.avi")
         #cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -60,47 +82,50 @@ class App(Ui_MainWindow, QObject):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self.mainWindow)
         self.setupUi(self.mainWindow)
-        # self.setWindowTitle("Qt live label demo")
         self.disply_width = 640
         self.display_height = 480
-        # # create the label that holds the image
-        # self.image_label = QLabel(self)
-        # #self.image_label.resize(self.disply_width, self.display_height)
         self.image_label.setScaledContents(True)
-        # # create a text label
-        # self.textLabel = QLabel('Webcam')
-
-        # # create a vertical box layout and add the two labels
-        # vbox = QVBoxLayout()
-        # vbox.addWidget(self.image_label)
-        # vbox.addWidget(self.textLabel)
-        # # set the vbox layout as the widgets layout
-        # self.setLayout(vbox)
-
-        # create the video capture thread
-
 
         self.station_cameras = {"1" : ["1", "2"], "2" : ["1", "3", "4"]}
         self.station_list.addItems(list(self.station_cameras.keys()))
+
+        # Init Signal/Slots
         self.station_list.itemClicked.connect(self.station_list_clicked)
         self.camera_list.itemClicked.connect(self.camera_list_clicked)
-        #self.camera_list.itemClicked.connect(self.height_slider_moved)
-
         self.compute_box_button.clicked.connect(self.compute_box_clicked)       	
         self.width_slider.sliderMoved.connect(self.width_slider_moved)
         self.height_slider.sliderMoved.connect(self.height_slider_moved)
         self.width_box.valueChanged.connect(self.width_box_changed)
         self.height_box.valueChanged.connect(self.height_box_changed)
 
+        # Logger Tests
         self.log_error("fehler 1")
         self.log_info("das ist eine info")
 
+        # Init Threads
         self.thread = VideoThread()
-        # connect its signal to the update_image slot
         self.thread.change_pixmap_signal.connect(self.update_image)
-        # start the thread
         self.thread.start()
 
+        self.countdown_thread = QThread()
+        self.worker = CountdownThread(5)
+        self.worker.moveToThread(self.countdown_thread)
+        self.countdown_thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.countdown_thread.quit)
+        self.worker.finished.connect(self.countdown_finished)
+        self.worker.countdown.connect(self.reportProgress)
+
+    @pyqtSlot(int)
+    def reportProgress(self, i):
+        self.thread.countdown = i
+        print(i)
+
+    @pyqtSlot()
+    def countdown_finished(self):
+        self.thread.box_is_active = True 
+        self.set_slider_values()
+
+    @pyqtSlot()
     def set_slider_values(self):
         if not self.thread.box_is_active:
             return
@@ -118,6 +143,7 @@ class App(Ui_MainWindow, QObject):
         self.width_box.setValue(self.thread.length[id][0])
         self.height_box.setValue(self.thread.length[id][1])
 
+    @pyqtSlot()
     def width_slider_moved(self):
         if not self.thread.box_is_active:
             return
@@ -128,7 +154,7 @@ class App(Ui_MainWindow, QObject):
         start = (self.width_slider.value() * (self.disply_width / 100)) - half_width
         self.thread.start_point[id][0] = int(start)
 
-
+    @pyqtSlot()
     def height_slider_moved(self):
         if not self.thread.box_is_active:
             return
@@ -139,6 +165,7 @@ class App(Ui_MainWindow, QObject):
         start = (self.height_slider.value() * (self.display_height / 100)) - half_height
         self.thread.start_point[id][1] = int(start)
 
+    @pyqtSlot()
     def width_box_changed(self):
         if not self.thread.box_is_active:
             return
@@ -148,6 +175,7 @@ class App(Ui_MainWindow, QObject):
         self.set_slider_values()
         print(self.width_box.value())
 
+    @pyqtSlot()
     def height_box_changed(self):
         if not self.thread.box_is_active:
             return
@@ -162,31 +190,18 @@ class App(Ui_MainWindow, QObject):
         self.mainWindow.show()
         sys.exit(self.app.exec_())
 
+    @pyqtSlot()
     def station_list_clicked(self, item):
         self.camera_list.clear()
         self.camera_list.addItems(self.station_cameras[item.text()])
-        #print('!!! click {}'.format(item.text()))
 
+    @pyqtSlot()
     def camera_list_clicked(self, item):
         self.thread.video_id = int(item.text()) - 1
-        #print('!!! click {}'.format(item.text()))   
 
+    @pyqtSlot()
     def compute_box_clicked(self):
-        threading.Thread(target=self.start_countdown).start()
-        #self.countdown_thread = QThread()
-        #self.countdown_thread.started.connect(self.start_countdown)
-        #self.countdown_thread.start()
-
-        #self.set_slider_values()
-
-    def start_countdown(self):
-        #print(self.countdown_box.value())
-        countdown_value = self.countdown_box.value()
-        for i in range(countdown_value, 0, -1):
-            self.thread.countdown = i
-            time.sleep(1)
-        self.thread.countdown = 0
-        self.thread.box_is_active = True 
+        self.countdown_thread.start()
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
@@ -210,9 +225,10 @@ class App(Ui_MainWindow, QObject):
     def log_error(self, msg):
         self.log_textbox.setTextColor(QColor(255,0,0))
         self.log_textbox.append(f"[ERROR] {msg}")
+
+    def test_1(self, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11):
+        print "hi"
     
 if __name__=="__main__":
-    #app = QApplication(sys.argv)
     a = App()
     a.show()
-    #sys.exit(app.exec_())

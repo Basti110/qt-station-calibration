@@ -1,6 +1,6 @@
 from PyQt5 import QtGui
 from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QColor
 import sys
 import cv2
 from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QObject
@@ -92,6 +92,9 @@ class App(Ui_MainWindow, QObject):
         self.width_box.valueChanged.connect(self.width_box_changed)
         self.height_box.valueChanged.connect(self.height_box_changed)
 
+        self.log_error("fehler 1")
+        self.log_info("das ist eine info")
+
         self.thread = VideoThread()
         # connect its signal to the update_image slot
         self.thread.change_pixmap_signal.connect(self.update_image)
@@ -174,7 +177,7 @@ class App(Ui_MainWindow, QObject):
         #self.countdown_thread.started.connect(self.start_countdown)
         #self.countdown_thread.start()
 
-        self.set_slider_values()
+        #self.set_slider_values()
 
     def start_countdown(self):
         #print(self.countdown_box.value())
@@ -183,7 +186,7 @@ class App(Ui_MainWindow, QObject):
             self.thread.countdown = i
             time.sleep(1)
         self.thread.countdown = 0
-        self.thread.box_is_active = True     
+        self.thread.box_is_active = True 
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
@@ -199,6 +202,14 @@ class App(Ui_MainWindow, QObject):
         convert_to_Qt_format = QtGui.QImage(rgb_image.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
         p = convert_to_Qt_format.scaled(self.disply_width, self.display_height, Qt.KeepAspectRatio)
         return QPixmap.fromImage(p)
+
+    def log_info(self, msg):
+        self.log_textbox.setTextColor(QColor(0,0,0))
+        self.log_textbox.append(f"[Info] {msg}")
+
+    def log_error(self, msg):
+        self.log_textbox.setTextColor(QColor(255,0,0))
+        self.log_textbox.append(f"[ERROR] {msg}")
     
 if __name__=="__main__":
     #app = QApplication(sys.argv)

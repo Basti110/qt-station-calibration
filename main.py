@@ -1,13 +1,12 @@
-from PyQt5 import QtGui
-from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow
-from PyQt5.QtGui import QPixmap, QColor
 import sys
-import cv2
-from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QObject
-import numpy as np
 import time
-import threading
-from layout import Ui_MainWindow 
+from PyQt5 import QtGui
+from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QListWidgetItem
+from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QObject
+from PyQt5.QtGui import QPixmap, QColor
+import cv2
+import numpy as np
+from layout import Ui_MainWindow
 
 class CountdownThread(QObject):
     finished = pyqtSignal()
@@ -16,10 +15,8 @@ class CountdownThread(QObject):
     def __init__(self, counter):
         super().__init__()
         self.countdown_value = counter
-        print("start countdown")
 
     def run(self):
-        print("run")
         for i in range(self.countdown_value, 0, -1):
             self.countdown.emit(i)
             #print(i)
@@ -27,8 +24,13 @@ class CountdownThread(QObject):
         self.countdown.emit(0)
         self.finished.emit()
         #self.count_class.thread.countdown = 0
-        #self.count_class.thread.box_is_active = True 
+        #self.count_class.thread.box_is_active = True
         #self.count_class.set_slider_values()
+
+    @pyqtSlot(int)
+    def countdown_box_changed(self, value):
+        print(value)
+        self.countdown_value = value
 
 
 class VideoThread(QThread):
@@ -42,11 +44,9 @@ class VideoThread(QThread):
         self.color1 = (0, 255, 0)  
         self.countdown = 0
         #img_draw = cv2.rectangle(img_draw, start_point, end_point, color1, thickness)
-        
 
     def run(self):
         # capture from web cam
-        print("run video")
         cap1 = cv2.VideoCapture("./out1.avi")
         cap2 = cv2.VideoCapture("./out2.avi")
         #cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -97,10 +97,8 @@ class App(Ui_MainWindow, QObject):
         self.height_slider.sliderMoved.connect(self.height_slider_moved)
         self.width_box.valueChanged.connect(self.width_box_changed)
         self.height_box.valueChanged.connect(self.height_box_changed)
-
-        # Logger Tests
-        self.log_error("fehler 1")
-        self.log_info("das ist eine info")
+        self.countdown_box.valueChanged.connect(self.countdown_box_changed)
+        
 
         # Init Threads
         self.thread = VideoThread()
@@ -108,94 +106,95 @@ class App(Ui_MainWindow, QObject):
         self.thread.start()
 
         self.countdown_thread = QThread()
-        self.worker = CountdownThread(5)
+        self.worker = CountdownThread(5)    
         self.worker.moveToThread(self.countdown_thread)
         self.countdown_thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.countdown_thread.quit)
         self.worker.finished.connect(self.countdown_finished)
-        self.worker.countdown.connect(self.reportProgress)
+        self.worker.countdown.connect(self.report_countdown)      
+
 
     @pyqtSlot(int)
-    def reportProgress(self, i):
+    def report_countdown(self, i):
         self.thread.countdown = i
-        print(i)
+        self.log_info(f"Countdown: {i}")
 
     @pyqtSlot()
     def countdown_finished(self):
-        self.thread.box_is_active = True 
+        self.thread.box_is_active = True
         self.set_slider_values()
 
     @pyqtSlot()
     def set_slider_values(self):
         if not self.thread.box_is_active:
             return
-        id = self.thread.video_id
+        index = self.thread.video_id
 
-        bbox = self.thread.start_point[id] + self.thread.length[id] 
+        bbox = self.thread.start_point[index] + self.thread.length[index] 
         width_center = bbox[0] + (bbox[2] / 2)
         height_center = bbox[1] + (bbox[3] / 2)
-        print(width_center)
-        print(height_center)
         slider1_value = int((width_center * 100) / self.disply_width)
         slider2_value = int((height_center * 100) / self.display_height)
         self.width_slider.setValue(slider1_value)
         self.height_slider.setValue(slider2_value)
-        self.width_box.setValue(self.thread.length[id][0])
-        self.height_box.setValue(self.thread.length[id][1])
+        self.width_box.setValue(self.thread.length[index][0])
+        self.height_box.setValue(self.thread.length[index][1])
 
     @pyqtSlot()
     def width_slider_moved(self):
         if not self.thread.box_is_active:
             return
-        id = self.thread.video_id
+        index = self.thread.video_id
 
-        bbox = self.thread.start_point[id] + self.thread.length[id]
+        bbox = self.thread.start_point[index] + self.thread.length[index]
         half_width = bbox[2] / 2
         start = (self.width_slider.value() * (self.disply_width / 100)) - half_width
-        self.thread.start_point[id][0] = int(start)
+        self.thread.start_point[index][0] = int(start)
 
     @pyqtSlot()
     def height_slider_moved(self):
         if not self.thread.box_is_active:
             return
-        id = self.thread.video_id
+        index = self.thread.video_id
 
-        bbox = self.thread.start_point[id] + self.thread.length[id]
+        bbox = self.thread.start_point[index] + self.thread.length[index]
         half_height = bbox[3] / 2
         start = (self.height_slider.value() * (self.display_height / 100)) - half_height
-        self.thread.start_point[id][1] = int(start)
+        self.thread.start_point[index][1] = int(start)
 
-    @pyqtSlot()
-    def width_box_changed(self):
+    @pyqtSlot(int)
+    def width_box_changed(self, value):
+        print(value)
         if not self.thread.box_is_active:
             return
-        id = self.thread.video_id
+        index = self.thread.video_id
 
-        self.thread.length[id][0] = int(self.width_box.value())
+        self.thread.length[index][0] = value
         self.set_slider_values()
-        print(self.width_box.value())
 
-    @pyqtSlot()
-    def height_box_changed(self):
+    @pyqtSlot(int)
+    def height_box_changed(self, value):
+        print("lel")
         if not self.thread.box_is_active:
             return
-        id = self.thread.video_id
+        index = self.thread.video_id
 
-        self.thread.length[id][1] = int(self.height_box.value())
+        self.thread.length[index][1] = value
         self.set_slider_values()
         print(self.height_box.value())
 
+    @pyqtSlot(int)
+    def countdown_box_changed(self, value):
+        self.worker.countdown_value = value
+        print(value)
 
-    def show(self):
-        self.mainWindow.show()
-        sys.exit(self.app.exec_())
-
-    @pyqtSlot()
+    @pyqtSlot(QListWidgetItem)
     def station_list_clicked(self, item):
+        print(type(item))
         self.camera_list.clear()
         self.camera_list.addItems(self.station_cameras[item.text()])
 
-    @pyqtSlot()
+    @pyqtSlot(QListWidgetItem)
     def camera_list_clicked(self, item):
         self.thread.video_id = int(item.text()) - 1
 
@@ -208,7 +207,7 @@ class App(Ui_MainWindow, QObject):
         """Updates the image_label with a new opencv image"""
         qt_img = self.convert_cv_qt(cv_img)
         self.image_label.setPixmap(qt_img)
-    
+
     def convert_cv_qt(self, cv_img):
         """Convert from an opencv image to QPixmap"""
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
@@ -218,6 +217,10 @@ class App(Ui_MainWindow, QObject):
         p = convert_to_Qt_format.scaled(self.disply_width, self.display_height, Qt.KeepAspectRatio)
         return QPixmap.fromImage(p)
 
+    def show(self):
+        self.mainWindow.show()
+        sys.exit(self.app.exec_())
+
     def log_info(self, msg):
         self.log_textbox.setTextColor(QColor(0,0,0))
         self.log_textbox.append(f"[Info] {msg}")
@@ -226,9 +229,6 @@ class App(Ui_MainWindow, QObject):
         self.log_textbox.setTextColor(QColor(255,0,0))
         self.log_textbox.append(f"[ERROR] {msg}")
 
-    def test_1(self, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11):
-        print "hi"
-    
 if __name__=="__main__":
     a = App()
     a.show()

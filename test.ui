@@ -284,7 +284,7 @@
               </spacer>
              </item>
              <item>
-              <widget class="QPushButton" name="pushButton">
+              <widget class="QPushButton" name="save_button">
                <property name="text">
                 <string>Save</string>
                </property>

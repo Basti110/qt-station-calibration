@@ -38,33 +38,55 @@ class VideoThread(QThread):
     def __init__(self):
         super().__init__()
         self.video_id = 0
-        self.start_point = [[230, 5], [280, 25]]
-        self.length = [[230, 470], [200, 415]]
+        self.start_point = [[230, 5], [280, 25], [280, 25]]
+        self.length = [[230, 470], [200, 415], [200, 415]]
         self.box_is_active = False
-        self.color1 = (0, 255, 0)  
+        self.color1 = (0, 255, 0)
         self.countdown = 0
+
+        self.cap1 = cv2.VideoCapture("./out1.avi")
+        self.cap2 = cv2.VideoCapture("./out2.avi")
+        self.cap3 = cv2.VideoCapture("./out3.avi")
+
+        self.screen1 = None
+        self.screen2 = None
+        self.screen3 = None
         #img_draw = cv2.rectangle(img_draw, start_point, end_point, color1, thickness)
 
     def run(self):
         # capture from web cam
-        cap1 = cv2.VideoCapture("./out1.avi")
-        cap2 = cv2.VideoCapture("./out2.avi")
+        #cap1 = cv2.VideoCapture("./out1.avi")
+        #cap2 = cv2.VideoCapture("./out2.avi")
+        #cap3 = cv2.VideoCapture("./out3.avi")
         #cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         #cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
         while True:
             if self.video_id == 0:
-                cap = cap1
+                cap = self.cap1
                 s_point = tuple(self.start_point[0])
                 e_point = (self.start_point[0][0] + self.length[0][0], self.start_point[0][1] + self.length[0][1])
-            else:
-                cap = cap2
+                screen = self.screen1
+            elif self.video_id == 1:
+                cap = self.cap2
                 s_point = tuple(self.start_point[1])
                 e_point = (self.start_point[1][0] + self.length[1][0], self.start_point[1][1] + self.length[1][1])
-            ret, cv_img = cap.read()
-            if ret is not True:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                screen = self.screen2
+            else:
+                cap = self.cap3
+                s_point = tuple(self.start_point[2])
+                e_point = (self.start_point[2][0] + self.length[2][0], self.start_point[2][1] + self.length[2][1])
+                screen = self.screen3
+
+            if screen is not None: 
+                cv_img = screen
+                ret = True
+            else:
                 ret, cv_img = cap.read()
+                if ret is not True:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, cv_img = cap.read()
+
             if ret:
                 if self.box_is_active:
                     cv_img = cv2.rectangle(cv_img, s_point, e_point, self.color1, 3)
@@ -72,6 +94,12 @@ class VideoThread(QThread):
                     cv2.putText(cv_img,f"{self.countdown}", (320,240), cv2.FONT_HERSHEY_SIMPLEX, 5, 255, thickness=10)
                 self.change_pixmap_signal.emit(cv_img)
                 time.sleep(0.016)
+
+    def take_screens(self):
+        _, self.screen1 = self.cap1.read()
+        _, self.screen2 = self.cap2.read()
+        _, self.screen3 = self.cap3.read()
+
 
 
 class App(Ui_MainWindow, QObject):
@@ -86,19 +114,20 @@ class App(Ui_MainWindow, QObject):
         self.display_height = 480
         self.image_label.setScaledContents(True)
 
-        self.station_cameras = {"1" : ["1", "2"], "2" : ["1", "3", "4"]}
+        self.station_cameras = {"1" : ["1", "2"], "2" : ["1", "3"]}
         self.station_list.addItems(list(self.station_cameras.keys()))
 
         # Init Signal/Slots
         self.station_list.itemClicked.connect(self.station_list_clicked)
         self.camera_list.itemClicked.connect(self.camera_list_clicked)
-        self.compute_box_button.clicked.connect(self.compute_box_clicked)       	
+        self.compute_box_button.clicked.connect(self.compute_box_clicked)
+        self.save_button.clicked.connect(self.save_button_clicked)
         self.width_slider.sliderMoved.connect(self.width_slider_moved)
         self.height_slider.sliderMoved.connect(self.height_slider_moved)
         self.width_box.valueChanged.connect(self.width_box_changed)
         self.height_box.valueChanged.connect(self.height_box_changed)
         self.countdown_box.valueChanged.connect(self.countdown_box_changed)
-        
+        self.countdown_box.valueChanged.connect(self.countdown_box_changed)
 
         # Init Threads
         self.thread = VideoThread()
@@ -123,6 +152,7 @@ class App(Ui_MainWindow, QObject):
     def countdown_finished(self):
         self.thread.box_is_active = True
         self.set_slider_values()
+        self.thread.take_screens()
 
     @pyqtSlot()
     def set_slider_values(self):
@@ -174,7 +204,6 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot(int)
     def height_box_changed(self, value):
-        print("lel")
         if not self.thread.box_is_active:
             return
         index = self.thread.video_id
@@ -186,11 +215,9 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot(int)
     def countdown_box_changed(self, value):
         self.worker.countdown_value = value
-        print(value)
 
     @pyqtSlot(QListWidgetItem)
     def station_list_clicked(self, item):
-        print(type(item))
         self.camera_list.clear()
         self.camera_list.addItems(self.station_cameras[item.text()])
 
@@ -201,6 +228,10 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot()
     def compute_box_clicked(self):
         self.countdown_thread.start()
+
+    @pyqtSlot()
+    def save_button_clicked(self):
+        self.log_info("Data stored into yaml files")
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):

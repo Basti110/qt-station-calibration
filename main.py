@@ -43,10 +43,20 @@ class VideoThread(QThread):
         self.box_is_active = False
         self.color1 = (0, 255, 0)
         self.countdown = 0
+        self.cam_is_busy = False
+        self.screen_mode = False
 
-        self.cap1 = cv2.VideoCapture("./out1.avi")
-        self.cap2 = cv2.VideoCapture("./out2.avi")
-        self.cap3 = cv2.VideoCapture("./out3.avi")
+        self.cap1 = cv2.VideoCapture(0)
+        self.cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+        self.cap2 = cv2.VideoCapture(2)
+        self.cap2.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap2.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+        self.cap3 = cv2.VideoCapture(4)
+        self.cap3.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap3.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
         self.screen1 = None
         self.screen2 = None
@@ -62,6 +72,11 @@ class VideoThread(QThread):
         #cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
         while True:
+            if self.screen_mode: 
+                self.take_screens()
+                self.screen_mode = False
+                continue
+
             if self.video_id == 0:
                 cap = self.cap1
                 s_point = tuple(self.start_point[0])
@@ -77,17 +92,19 @@ class VideoThread(QThread):
                 s_point = tuple(self.start_point[2])
                 e_point = (self.start_point[2][0] + self.length[2][0], self.start_point[2][1] + self.length[2][1])
                 screen = self.screen3
-
             if screen is not None: 
                 cv_img = screen
                 ret = True
             else:
-                ret, cv_img = cap.read()
+                if not self.cam_is_busy:
+                    ret, cv_img = cap.read()
+                else:
+                    continue
                 if ret is not True:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, cv_img = cap.read()
-
             if ret:
+                cv_img = cv2.resize(cv_img, (640, 480))
                 if self.box_is_active:
                     cv_img = cv2.rectangle(cv_img, s_point, e_point, self.color1, 3)
                 if self.countdown > 0:
@@ -96,10 +113,9 @@ class VideoThread(QThread):
                 time.sleep(0.016)
 
     def take_screens(self):
-        _, self.screen1 = self.cap1.read()
-        _, self.screen2 = self.cap2.read()
-        _, self.screen3 = self.cap3.read()
-
+        ret, self.screen1 = self.cap1.read()
+        ret, self.screen2 = self.cap2.read()
+        ret, self.screen3 = self.cap3.read()
 
 
 class App(Ui_MainWindow, QObject):
@@ -152,7 +168,11 @@ class App(Ui_MainWindow, QObject):
     def countdown_finished(self):
         self.thread.box_is_active = True
         self.set_slider_values()
-        self.thread.take_screens()
+        self.thread.screen_mode=True
+        #self.thread.cam_is_busy = True
+        #self.thread.take_screens()
+        #self.thread.cam_is_busy = False
+        #
 
     @pyqtSlot()
     def set_slider_values(self):

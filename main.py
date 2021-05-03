@@ -46,15 +46,15 @@ class VideoThread(QThread):
         self.cam_is_busy = False
         self.screen_mode = False
 
-        self.cap1 = cv2.VideoCapture(0)
+        self.cap1 = cv2.VideoCapture("./out1.avi")
         self.cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-        self.cap2 = cv2.VideoCapture(2)
+        self.cap2 = cv2.VideoCapture("./out2.avi")
         self.cap2.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap2.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-        self.cap3 = cv2.VideoCapture(4)
+        self.cap3 = cv2.VideoCapture("./out3.avi")
         self.cap3.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap3.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 

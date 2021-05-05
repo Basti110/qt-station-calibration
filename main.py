@@ -32,6 +32,38 @@ class CountdownThread(QObject):
         print(value)
         self.countdown_value = value
 
+class DataManager(QObject):
+    def __init__(self):
+        self._cameras = ["1", "2", "3", "4", "5", "6"]
+        self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", 
+            "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
+        self._station_cameras = {"Hantelbank" : ["1", "2"], "Cable Tower" : ["1", "3"], "Test1" : [], "Test2" : []}
+        self._station_exercises = {"Hantelbank" : ["Bizeps-Curls", "Flys", "Unterarm-Curls"], \
+            "Cable Tower" : ["Cable Crossover", "Rumpf-Twist", "Seitheben"], "Test1" : [], "Test2" : []}
+
+    def add_camera(self, camera_string):
+        self._cameras.append(camera_string)
+
+    def remove_camera(self, camera_string):
+        self._cameras.remove(camera_string)
+
+    def add_station(self, station_string):
+        self._cameras.append(station_string)
+
+    def remove_station(self, station_string):
+        self._cameras.remove(station_string)
+
+    def add_exercise_to_station(self, station_string, exercise_id):
+        self._station_exercises[station_string].append(self._exercises[exercise_id])
+
+    def remove_exercise_from_station(self, station_string, exercise_id):
+        self._station_exercises[station_string].remove(self._exercises[exercise_id])
+
+    def add_camera_to_station(self, station_string, exercise_id):
+        self._station_cameras[station_string].append(self._cameras[exercise_id])
+
+    def remove_camera_from_station(self, station_string, exercise_id):
+        self._station_cameras[station_string].remove(self._cameras[exercise_id])
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
@@ -130,11 +162,27 @@ class App(Ui_MainWindow, QObject):
         self.display_height = 480
         self.image_label.setScaledContents(True)
 
-        self.station_cameras = {"1" : ["1", "2"], "2" : ["1", "3"]}
-        self.station_list.addItems(list(self.station_cameras.keys()))
+        #### Data ###
+        
+        self.cameras = ["1", "2", "3", "4", "5", "6"]
+        self.exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
+        self.station_cameras = {"Hantelbank" : ["1", "2"], "Cable Tower" : ["1", "3"], "Test1" : [], "Test2" : []}
+        self.station_exercises = {"Hantelbank" : ["Bizeps-Curls", "Flys", "Unterarm-Curls"], \
+            "Cable Tower" : ["Cable Crossover", "Rumpf-Twist", "Seitheben"], "Test1" : [], "Test2" : []}
+
+        ### Data End ###
+
+        self.overview_mode = 0
+        self.configure = ["Camera", "Exercise"]
+        self.configure_list.addItems(self.configure)
+        self.station_list_co.addItems(list(self.station_cameras.keys()))
+        self.station_list_so.addItems(list(self.station_cameras.keys()))
 
         # Init Signal/Slots
-        self.station_list.itemClicked.connect(self.station_list_clicked)
+        
+        self.station_list_co.itemClicked.connect(self.station_list_co_clicked)
+        self.station_list_so.itemClicked.connect(self.station_list_so_clicked)
+        self.configure_list.itemClicked.connect(self.configure_list_clicked)
         self.camera_list.itemClicked.connect(self.camera_list_clicked)
         self.compute_box_button.clicked.connect(self.compute_box_clicked)
         self.save_button.clicked.connect(self.save_button_clicked)
@@ -237,9 +285,23 @@ class App(Ui_MainWindow, QObject):
         self.worker.countdown_value = value
 
     @pyqtSlot(QListWidgetItem)
-    def station_list_clicked(self, item):
+    def station_list_co_clicked(self, item):
         self.camera_list.clear()
         self.camera_list.addItems(self.station_cameras[item.text()])
+
+    @pyqtSlot(QListWidgetItem)
+    def station_list_so_clicked(self, item):
+        self.update_setting_list()
+        print("click")
+
+        #setting_label.set
+        #self.camera_list.clear()
+        #self.camera_list.addItems(self.station_cameras[item.text()])
+    @pyqtSlot(QListWidgetItem)
+    def configure_list_clicked(self, item):
+        self.setting_label.setText(item.text() + "s")
+        self.overview_mode = self.configure.index(item.text())
+        self.update_setting_list()
 
     @pyqtSlot(QListWidgetItem)
     def camera_list_clicked(self, item):
@@ -258,6 +320,25 @@ class App(Ui_MainWindow, QObject):
         """Updates the image_label with a new opencv image"""
         qt_img = self.convert_cv_qt(cv_img)
         self.image_label.setPixmap(qt_img)
+
+    def update_setting_list(self):     
+        index = self.overview_mode
+        self.setting_list.clear()
+        self.suggestion_list.clear()
+        selected_station = self.station_list_so.selectedItems()[0]
+        print(selected_station.text())
+        if index == 0:
+            items = self.station_cameras[selected_station.text()]
+            suggestion = [i for i in self.cameras if i not in items]
+            self.setting_list.addItems(items)
+            self.suggestion_list.addItems(suggestion)
+        else:
+            items = self.station_exercises[selected_station.text()]
+            suggestion = [i for i in self.exercises if i not in items]
+            self.setting_list.addItems(items)
+            self.suggestion_list.addItems(suggestion)
+            print("click 2")
+        print("click")
 
     def convert_cv_qt(self, cv_img):
         """Convert from an opencv image to QPixmap"""

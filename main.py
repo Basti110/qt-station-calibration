@@ -33,37 +33,63 @@ class CountdownThread(QObject):
         self.countdown_value = value
 
 class DataManager(QObject):
+    cameras_modified = pyqtSignal()
+    stations_modified = pyqtSignal()
+    stations_cameras_modified = pyqtSignal()
+    stations_exercises_modified = pyqtSignal()
+
     def __init__(self):
         self._cameras = ["1", "2", "3", "4", "5", "6"]
         self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", 
             "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
-        self._station_cameras = {"Hantelbank" : ["1", "2"], "Cable Tower" : ["1", "3"], "Test1" : [], "Test2" : []}
+        self._stations = ["Hantelbank", "Cable Tower", "Test1", "Test2"]
+        self._station_cameras = {"Hantelbank" : ["1", "2"], "Cable Tower" : ["1", "3"]}
         self._station_exercises = {"Hantelbank" : ["Bizeps-Curls", "Flys", "Unterarm-Curls"], \
             "Cable Tower" : ["Cable Crossover", "Rumpf-Twist", "Seitheben"], "Test1" : [], "Test2" : []}
 
     def add_camera(self, camera_string):
         self._cameras.append(camera_string)
+        self.cameras_modified.emit()
 
     def remove_camera(self, camera_string):
         self._cameras.remove(camera_string)
+        self.cameras_modified.emit()
 
     def add_station(self, station_string):
         self._cameras.append(station_string)
+        self.stations_modified.emit()
 
     def remove_station(self, station_string):
         self._cameras.remove(station_string)
-
-    def add_exercise_to_station(self, station_string, exercise_id):
-        self._station_exercises[station_string].append(self._exercises[exercise_id])
-
-    def remove_exercise_from_station(self, station_string, exercise_id):
-        self._station_exercises[station_string].remove(self._exercises[exercise_id])
+        self.stations_modified.emit()
 
     def add_camera_to_station(self, station_string, exercise_id):
         self._station_cameras[station_string].append(self._cameras[exercise_id])
+        self.stations_cameras_modified.emit()
 
     def remove_camera_from_station(self, station_string, exercise_id):
         self._station_cameras[station_string].remove(self._cameras[exercise_id])
+        self.stations_cameras_modified.emit()
+
+    def add_exercise_to_station(self, station_string, exercise_id):
+        self._station_exercises[station_string].append(self._exercises[exercise_id])
+        self.stations_exercises_modified.emit()
+
+    def remove_exercise_from_station(self, station_string, exercise_id):
+        self._station_exercises[station_string].remove(self._exercises[exercise_id])
+        self.stations_exercises_modified.emit()
+
+    def get_cameras(self): 
+        return self._stations
+
+    def get_stations(self): 
+        return self._stations
+
+    def get_station_cameras(self): 
+        return self._station_cameras
+
+    def get_station_exercises(self): 
+        return self._station_exercises
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
@@ -161,6 +187,7 @@ class App(Ui_MainWindow, QObject):
         self.disply_width = 640
         self.display_height = 480
         self.image_label.setScaledContents(True)
+        self.data = DataManager()
 
         #### Data ###
         
@@ -286,22 +313,17 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot(QListWidgetItem)
     def station_list_co_clicked(self, item):
-        self.camera_list.clear()
-        self.camera_list.addItems(self.station_cameras[item.text()])
+        self.update_camera_list(item)
 
     @pyqtSlot(QListWidgetItem)
     def station_list_so_clicked(self, item):
-        self.update_setting_list()
-        print("click")
+        self.update_setting_and_suggestion_list(item)
 
-        #setting_label.set
-        #self.camera_list.clear()
-        #self.camera_list.addItems(self.station_cameras[item.text()])
     @pyqtSlot(QListWidgetItem)
     def configure_list_clicked(self, item):
         self.setting_label.setText(item.text() + "s")
         self.overview_mode = self.configure.index(item.text())
-        self.update_setting_list()
+        self.update_setting_and_suggestion_list()
 
     @pyqtSlot(QListWidgetItem)
     def camera_list_clicked(self, item):
@@ -320,25 +342,6 @@ class App(Ui_MainWindow, QObject):
         """Updates the image_label with a new opencv image"""
         qt_img = self.convert_cv_qt(cv_img)
         self.image_label.setPixmap(qt_img)
-
-    def update_setting_list(self):     
-        index = self.overview_mode
-        self.setting_list.clear()
-        self.suggestion_list.clear()
-        selected_station = self.station_list_so.selectedItems()[0]
-        print(selected_station.text())
-        if index == 0:
-            items = self.station_cameras[selected_station.text()]
-            suggestion = [i for i in self.cameras if i not in items]
-            self.setting_list.addItems(items)
-            self.suggestion_list.addItems(suggestion)
-        else:
-            items = self.station_exercises[selected_station.text()]
-            suggestion = [i for i in self.exercises if i not in items]
-            self.setting_list.addItems(items)
-            self.suggestion_list.addItems(suggestion)
-            print("click 2")
-        print("click")
 
     def convert_cv_qt(self, cv_img):
         """Convert from an opencv image to QPixmap"""
@@ -360,6 +363,63 @@ class App(Ui_MainWindow, QObject):
     def log_error(self, msg):
         self.log_textbox.setTextColor(QColor(255,0,0))
         self.log_textbox.append(f"[ERROR] {msg}")
+
+    ### Gui Update Functions ###
+    ### Update Functions are not allowed to modify the data manager (update loop) ###
+    ### Only Update Gui elements
+    @pyqtSlot()
+    def cameras_modified(self):
+        self.update_setting_and_suggestion_list()
+
+    @pyqtSlot()
+    def stations_modified(self):
+        self.update_setting_and_suggestion_list()
+        self.update_station_list_so(self)
+        self.update_station_list_co(self)
+
+    @pyqtSlot()
+    def stations_cameras_modified(self):
+        self.update_setting_and_suggestion_list()
+
+    @pyqtSlot()
+    def stations_exercises_modified(self):
+        self.update_setting_and_suggestion_list()
+
+    def update_setting_and_suggestion_list(self, selected_station = None):
+        if selected_station is None:
+            selected_station = self.station_list_so.selectedItems()[0]
+
+        index = self.overview_mode
+        self.setting_list.clear()
+        self.suggestion_list.clear()
+
+        if index == 0:
+            items = self.station_cameras[selected_station.text()]
+            suggestion = [i for i in self.cameras if i not in items]
+            self.setting_list.addItems(items)
+            self.suggestion_list.addItems(suggestion)
+        else:
+            items = self.station_exercises[selected_station.text()]
+            suggestion = [i for i in self.exercises if i not in items]
+            self.setting_list.addItems(items)
+            self.suggestion_list.addItems(suggestion)
+
+    def update_camera_list(self, selected_station = None):
+        self.camera_list.clear()
+        if selected_station is None:
+            selected_items = self.station_list_so.selectedItems()
+            if not selected_items:
+                return
+            selected_station = selected_items[0]       
+        self.camera_list.addItems(self.station_cameras[selected_station.text()])
+
+    def update_station_list_co(self):
+        self.station_list_co.clear()
+        self.station_list_co.addItems(list(self.station_cameras.keys()))
+
+    def update_station_list_so(self):
+        self.station_list_co.clear()
+        self.station_list_co.addItems(list(self.station_cameras.keys()))
 
 if __name__=="__main__":
     a = App()

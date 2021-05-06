@@ -1,12 +1,13 @@
 import sys
 import time
-from PyQt5 import QtGui
-from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QListWidgetItem
+from PyQt5 import QtGui, uic
+from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QListWidgetItem, QDialog
 from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QObject
 from PyQt5.QtGui import QPixmap, QColor
 import cv2
 import numpy as np
 from layout import Ui_MainWindow
+from dialog_station import Ui_Dialog as StationDialogUI
 
 class CountdownThread(QObject):
     finished = pyqtSignal()
@@ -39,6 +40,7 @@ class DataManager(QObject):
     stations_exercises_modified = pyqtSignal()
 
     def __init__(self):
+        super().__init__()
         self._cameras = ["1", "2", "3", "4", "5", "6"]
         self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", 
             "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
@@ -56,40 +58,48 @@ class DataManager(QObject):
         self.cameras_modified.emit()
 
     def add_station(self, station_string):
-        self._cameras.append(station_string)
+        self._stations.append(station_string)
         self.stations_modified.emit()
 
     def remove_station(self, station_string):
-        self._cameras.remove(station_string)
+        self._stations.remove(station_string)
         self.stations_modified.emit()
 
-    def add_camera_to_station(self, station_string, exercise_id):
-        self._station_cameras[station_string].append(self._cameras[exercise_id])
+    def add_camera_to_station(self, station_string, camera_string):
+        if station_string not in self._station_cameras:
+            self._station_cameras[station_string] = []
+        self._station_cameras[station_string].append(camera_string) #self._cameras[exercise_id])
         self.stations_cameras_modified.emit()
 
-    def remove_camera_from_station(self, station_string, exercise_id):
-        self._station_cameras[station_string].remove(self._cameras[exercise_id])
+    def remove_camera_from_station(self, station_string, camera_string):
+        self._station_cameras[station_string].remove(camera_string) #self._cameras[exercise_id])
         self.stations_cameras_modified.emit()
 
-    def add_exercise_to_station(self, station_string, exercise_id):
-        self._station_exercises[station_string].append(self._exercises[exercise_id])
+    def add_exercise_to_station(self, station_string, exercise_string):
+        if station_string not in self._station_exercises:
+            self._station_exercises[station_string] = []
+        self._station_exercises[station_string].append(exercise_string) #self._exercises[exercise_id])
         self.stations_exercises_modified.emit()
 
-    def remove_exercise_from_station(self, station_string, exercise_id):
-        self._station_exercises[station_string].remove(self._exercises[exercise_id])
+    def remove_exercise_from_station(self, station_string, exercise_string):
+        self._station_exercises[station_string].remove(exercise_string) #self._exercises[exercise_id])
         self.stations_exercises_modified.emit()
 
-    def get_cameras(self): 
+    def get_cameras(self):
+        return self._cameras
+
+    def get_stations(self):
         return self._stations
 
-    def get_stations(self): 
-        return self._stations
+    def get_exercises(self):
+        return self._exercises
 
-    def get_station_cameras(self): 
+    def get_station_cameras(self):
         return self._station_cameras
 
-    def get_station_exercises(self): 
+    def get_station_exercises(self):
         return self._station_exercises
+
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
@@ -189,24 +199,21 @@ class App(Ui_MainWindow, QObject):
         self.image_label.setScaledContents(True)
         self.data = DataManager()
 
-        #### Data ###
-        
-        self.cameras = ["1", "2", "3", "4", "5", "6"]
-        self.exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
-        self.station_cameras = {"Hantelbank" : ["1", "2"], "Cable Tower" : ["1", "3"], "Test1" : [], "Test2" : []}
-        self.station_exercises = {"Hantelbank" : ["Bizeps-Curls", "Flys", "Unterarm-Curls"], \
-            "Cable Tower" : ["Cable Crossover", "Rumpf-Twist", "Seitheben"], "Test1" : [], "Test2" : []}
-
-        ### Data End ###
+        #Dialogs
+        self.station_dialog = QDialog()
+        self.dialog_ui = StationDialogUI()
+        self.dialog_ui.setupUi(self.station_dialog)
 
         self.overview_mode = 0
         self.configure = ["Camera", "Exercise"]
         self.configure_list.addItems(self.configure)
-        self.station_list_co.addItems(list(self.station_cameras.keys()))
-        self.station_list_so.addItems(list(self.station_cameras.keys()))
+        station_cameras = self.data.get_station_cameras()
+        stations = self.data.get_stations()
+        self.station_list_co.addItems(list(station_cameras.keys()))
+        self.station_list_so.addItems(stations)
 
         # Init Signal/Slots
-        
+        self.station_dialog.finished.connect(self.station_dialog_finished)
         self.station_list_co.itemClicked.connect(self.station_list_co_clicked)
         self.station_list_so.itemClicked.connect(self.station_list_so_clicked)
         self.configure_list.itemClicked.connect(self.configure_list_clicked)
@@ -219,6 +226,15 @@ class App(Ui_MainWindow, QObject):
         self.height_box.valueChanged.connect(self.height_box_changed)
         self.countdown_box.valueChanged.connect(self.countdown_box_changed)
         self.countdown_box.valueChanged.connect(self.countdown_box_changed)
+        self.add_suggestion_button.clicked.connect(self.add_suggestion_clicked)
+        self.remove_suggestion_button.clicked.connect(self.remove_suggestion_clicked)
+        self.add_station_button.clicked.connect(self.add_station)
+
+        #Init Signal/Slots data
+        self.data.cameras_modified.connect(self.cameras_modified)
+        self.data.stations_modified.connect(self.stations_modified)
+        self.data.stations_cameras_modified.connect(self.stations_cameras_modified)
+        self.data.stations_exercises_modified.connect(self.stations_exercises_modified)
 
         # Init Threads
         self.thread = VideoThread()
@@ -226,12 +242,25 @@ class App(Ui_MainWindow, QObject):
         self.thread.start()
 
         self.countdown_thread = QThread()
-        self.worker = CountdownThread(5)    
+        self.worker = CountdownThread(5)
         self.worker.moveToThread(self.countdown_thread)
         self.countdown_thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.countdown_thread.quit)
         self.worker.finished.connect(self.countdown_finished)
-        self.worker.countdown.connect(self.report_countdown)      
+        self.worker.countdown.connect(self.report_countdown)
+
+    @pyqtSlot(int)
+    def station_dialog_finished(self, result):
+        if result != 1:
+            return
+        text = self.dialog_ui.sation_name_edit.text()
+        self.data.add_station(text)
+        #print("add: ", text)
+        #print("check: ", result)
+
+    @pyqtSlot()
+    def add_station(self):
+        self.station_dialog.show()
 
 
     @pyqtSlot(int)
@@ -330,6 +359,37 @@ class App(Ui_MainWindow, QObject):
         self.thread.video_id = int(item.text()) - 1
 
     @pyqtSlot()
+    def add_suggestion_clicked(self):
+        selected_station = self.station_list_so.selectedItems()
+        if selected_station is None:
+            return
+        selected_station = selected_station[0]
+        items = self.suggestion_list.selectedItems()
+
+        if items:
+            item = items[0]
+            if self.overview_mode == 0:
+                self.data.add_camera_to_station(selected_station.text(), item.text())
+            else:
+                self.data.add_exercise_to_station(selected_station.text(), item.text())
+
+    @pyqtSlot()
+    def remove_suggestion_clicked(self):
+        selected_station = self.station_list_so.selectedItems()
+        if selected_station is None:
+            return
+        selected_station = selected_station[0]
+        items = self.setting_list.selectedItems()
+  
+        if items:
+            item = items[0]
+            if self.overview_mode == 0:
+                self.data.remove_camera_from_station(selected_station.text(), item.text())
+            else:
+                self.data.remove_exercise_from_station(selected_station.text(), item.text())
+
+
+    @pyqtSlot()
     def compute_box_clicked(self):
         self.countdown_thread.start()
 
@@ -374,12 +434,13 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot()
     def stations_modified(self):
         self.update_setting_and_suggestion_list()
-        self.update_station_list_so(self)
-        self.update_station_list_co(self)
+        self.update_station_list_so()
+        self.update_station_list_co()
 
     @pyqtSlot()
     def stations_cameras_modified(self):
         self.update_setting_and_suggestion_list()
+        self.update_station_list_co()
 
     @pyqtSlot()
     def stations_exercises_modified(self):
@@ -387,20 +448,32 @@ class App(Ui_MainWindow, QObject):
 
     def update_setting_and_suggestion_list(self, selected_station = None):
         if selected_station is None:
-            selected_station = self.station_list_so.selectedItems()[0]
+            selected_station = self.station_list_so.selectedItems()
+            print(selected_station)
+            if not selected_station:
+                return
+            selected_station = selected_station[0]
 
         index = self.overview_mode
         self.setting_list.clear()
         self.suggestion_list.clear()
 
         if index == 0:
-            items = self.station_cameras[selected_station.text()]
-            suggestion = [i for i in self.cameras if i not in items]
+            station_cameras = self.data.get_station_cameras()
+            cameras = self.data.get_cameras()
+            items = []
+            if selected_station.text() in station_cameras:
+                items = station_cameras[selected_station.text()]
+            suggestion = [i for i in cameras if i not in items]
             self.setting_list.addItems(items)
             self.suggestion_list.addItems(suggestion)
         else:
-            items = self.station_exercises[selected_station.text()]
-            suggestion = [i for i in self.exercises if i not in items]
+            station_exercises = self.data.get_station_exercises()
+            exercises = self.data.get_exercises()
+            items = []
+            if selected_station.text() in station_exercises:
+                items = station_exercises[selected_station.text()]
+            suggestion = [i for i in exercises if i not in items]
             self.setting_list.addItems(items)
             self.suggestion_list.addItems(suggestion)
 
@@ -410,16 +483,23 @@ class App(Ui_MainWindow, QObject):
             selected_items = self.station_list_so.selectedItems()
             if not selected_items:
                 return
-            selected_station = selected_items[0]       
-        self.camera_list.addItems(self.station_cameras[selected_station.text()])
+            selected_station = selected_items[0]
+
+        station_cameras = self.data.get_station_cameras()
+        station = selected_station.text()
+        if station in station_cameras:
+            self.camera_list.addItems(station_cameras[selected_station.text()])
 
     def update_station_list_co(self):
         self.station_list_co.clear()
-        self.station_list_co.addItems(list(self.station_cameras.keys()))
+        station_cameras = self.data.get_station_cameras()
+        self.station_list_co.addItems(list(station_cameras.keys()))
 
     def update_station_list_so(self):
-        self.station_list_co.clear()
-        self.station_list_co.addItems(list(self.station_cameras.keys()))
+        print("test")
+        self.station_list_so.clear()
+        stations = self.data.get_stations()
+        self.station_list_so.addItems(stations)
 
 if __name__=="__main__":
     a = App()

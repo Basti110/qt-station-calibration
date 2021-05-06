@@ -35,7 +35,7 @@
         <enum>QTabWidget::North</enum>
        </property>
        <property name="currentIndex">
-        <number>1</number>
+        <number>0</number>
        </property>
        <widget class="QWidget" name="tab">
         <attribute name="title">
@@ -111,7 +111,7 @@
                 </spacer>
                </item>
                <item>
-                <widget class="QPushButton" name="pushButton">
+                <widget class="QPushButton" name="add_station_button">
                  <property name="text">
                   <string>Add</string>
                  </property>
@@ -340,6 +340,13 @@
               <widget class="QPushButton" name="add_suggestion_button">
                <property name="text">
                 <string>&lt;-</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="remove_suggestion_button">
+               <property name="text">
+                <string>-&gt;</string>
                </property>
               </widget>
              </item>

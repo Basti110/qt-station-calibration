@@ -26,9 +26,9 @@ class Ui_Dialog(object):
         self.horizontalLayout = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget)
         self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
         self.horizontalLayout.setObjectName("horizontalLayout")
-        self.pushButton = QtWidgets.QPushButton(self.horizontalLayoutWidget)
-        self.pushButton.setObjectName("pushButton")
-        self.horizontalLayout.addWidget(self.pushButton)
+        self.remove_button = QtWidgets.QPushButton(self.horizontalLayoutWidget)
+        self.remove_button.setObjectName("remove_button")
+        self.horizontalLayout.addWidget(self.remove_button)
         spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.horizontalLayout.addItem(spacerItem)
         self.buttonBox = QtWidgets.QDialogButtonBox(self.horizontalLayoutWidget)
@@ -46,7 +46,7 @@ class Ui_Dialog(object):
         _translate = QtCore.QCoreApplication.translate
         Dialog.setWindowTitle(_translate("Dialog", "Dialog"))
         self.label.setText(_translate("Dialog", "Station Name:"))
-        self.pushButton.setText(_translate("Dialog", "Remove"))
+        self.remove_button.setText(_translate("Dialog", "Remove"))
 
 
 if __name__ == "__main__":

@@ -7,7 +7,8 @@ from PyQt5.QtGui import QPixmap, QColor
 import cv2
 import numpy as np
 from layout import Ui_MainWindow
-from dialog_station import Ui_Dialog as StationDialogUI
+from dialog_station_add import Ui_Dialog as StationAddDialogUI
+from dialog_station_edit import Ui_Dialog as StationEditDialogUI
 
 class CountdownThread(QObject):
     finished = pyqtSignal()
@@ -200,9 +201,12 @@ class App(Ui_MainWindow, QObject):
         self.data = DataManager()
 
         #Dialogs
-        self.station_dialog = QDialog()
-        self.dialog_ui = StationDialogUI()
-        self.dialog_ui.setupUi(self.station_dialog)
+        self.station_add_dialog = QDialog()
+        self.station_add_ui = StationAddDialogUI()
+        self.station_add_ui.setupUi(self.station_add_dialog)
+        self.station_edit_dialog = QDialog()
+        self.station_edit_ui = StationEditDialogUI()
+        self.station_edit_ui.setupUi(self.station_edit_dialog)
 
         self.overview_mode = 0
         self.configure = ["Camera", "Exercise"]
@@ -213,7 +217,9 @@ class App(Ui_MainWindow, QObject):
         self.station_list_so.addItems(stations)
 
         # Init Signal/Slots
-        self.station_dialog.finished.connect(self.station_dialog_finished)
+        self.station_add_dialog.finished.connect(self.station_add_dialog_finished)
+        self.station_edit_dialog.finished.connect(self.station_edit_dialog_finished)
+
         self.station_list_co.itemClicked.connect(self.station_list_co_clicked)
         self.station_list_so.itemClicked.connect(self.station_list_so_clicked)
         self.configure_list.itemClicked.connect(self.configure_list_clicked)
@@ -229,6 +235,8 @@ class App(Ui_MainWindow, QObject):
         self.add_suggestion_button.clicked.connect(self.add_suggestion_clicked)
         self.remove_suggestion_button.clicked.connect(self.remove_suggestion_clicked)
         self.add_station_button.clicked.connect(self.add_station)
+        self.edit_station_button.clicked.connect(self.edit_station)
+        self.station_edit_ui.remove_button.clicked.connect(self.remove_station_clicked)
 
         #Init Signal/Slots data
         self.data.cameras_modified.connect(self.cameras_modified)
@@ -249,19 +257,45 @@ class App(Ui_MainWindow, QObject):
         self.worker.finished.connect(self.countdown_finished)
         self.worker.countdown.connect(self.report_countdown)
 
+        self.log_info("Info")
+        self.log_warning("Warning")
+        self.log_error("Error")
+
     @pyqtSlot(int)
-    def station_dialog_finished(self, result):
+    def station_add_dialog_finished(self, result):
         if result != 1:
             return
-        text = self.dialog_ui.sation_name_edit.text()
+        text = self.station_add_ui.sation_name_edit.text()
+        if not text:
+            self.log_error("Empty Strings are not allowed")
+            return
         self.data.add_station(text)
-        #print("add: ", text)
-        #print("check: ", result)
+        self.log_info(f"Added new Station: {text}")
+
+    @pyqtSlot(int)
+    def station_edit_dialog_finished(self, result):
+        if result != 1:
+            return
+        text = self.station_add_ui.sation_name_edit.text()
+        if not text:
+            self.log_error("Empty Strings are not allowed")
+            return
+        self.data.add_station(text)
+        self.log_info(f"Added new Station: {text}")
 
     @pyqtSlot()
     def add_station(self):
-        self.station_dialog.show()
+        self.station_add_dialog.show()
 
+    @pyqtSlot()
+    def edit_station(self):
+        selected_station = self.station_list_so.selectedItems()
+        if not selected_station:
+            self.log_warning("Select a Station first")
+            return
+        selected_station = selected_station[0]
+        self.station_edit_ui.sation_name_edit.setText(selected_station.text())
+        self.station_edit_dialog.show()
 
     @pyqtSlot(int)
     def report_countdown(self, i):
@@ -276,7 +310,6 @@ class App(Ui_MainWindow, QObject):
         #self.thread.cam_is_busy = True
         #self.thread.take_screens()
         #self.thread.cam_is_busy = False
-        #
 
     @pyqtSlot()
     def set_slider_values(self):
@@ -318,7 +351,6 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot(int)
     def width_box_changed(self, value):
-        print(value)
         if not self.thread.box_is_active:
             return
         index = self.thread.video_id
@@ -334,7 +366,6 @@ class App(Ui_MainWindow, QObject):
 
         self.thread.length[index][1] = value
         self.set_slider_values()
-        print(self.height_box.value())
 
     @pyqtSlot(int)
     def countdown_box_changed(self, value):
@@ -376,11 +407,12 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot()
     def remove_suggestion_clicked(self):
         selected_station = self.station_list_so.selectedItems()
-        if selected_station is None:
+        if not selected_station:
+            self.log_warning("Select a Station first")
             return
         selected_station = selected_station[0]
         items = self.setting_list.selectedItems()
-  
+
         if items:
             item = items[0]
             if self.overview_mode == 0:
@@ -396,6 +428,10 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot()
     def save_button_clicked(self):
         self.log_info("Data stored into yaml files")
+
+    @pyqtSlot()
+    def remove_station_clicked(self):
+        self.station_edit_dialog.close()
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):
@@ -421,8 +457,12 @@ class App(Ui_MainWindow, QObject):
         self.log_textbox.append(f"[Info] {msg}")
 
     def log_error(self, msg):
-        self.log_textbox.setTextColor(QColor(255,0,0))
+        self.log_textbox.setTextColor(QColor(235, 64, 52))
         self.log_textbox.append(f"[ERROR] {msg}")
+
+    def log_warning(self, msg):
+        self.log_textbox.setTextColor(QColor(214, 147, 39))
+        self.log_textbox.append(f"[WARNING] {msg}")
 
     ### Gui Update Functions ###
     ### Update Functions are not allowed to modify the data manager (update loop) ###
@@ -430,6 +470,7 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot()
     def cameras_modified(self):
         self.update_setting_and_suggestion_list()
+        self.update_camera_list()
 
     @pyqtSlot()
     def stations_modified(self):
@@ -449,8 +490,8 @@ class App(Ui_MainWindow, QObject):
     def update_setting_and_suggestion_list(self, selected_station = None):
         if selected_station is None:
             selected_station = self.station_list_so.selectedItems()
-            print(selected_station)
             if not selected_station:
+                #self.log_warning("Select a Station first")
                 return
             selected_station = selected_station[0]
 
@@ -480,7 +521,7 @@ class App(Ui_MainWindow, QObject):
     def update_camera_list(self, selected_station = None):
         self.camera_list.clear()
         if selected_station is None:
-            selected_items = self.station_list_so.selectedItems()
+            selected_items = self.station_list_co.selectedItems()
             if not selected_items:
                 return
             selected_station = selected_items[0]
@@ -496,7 +537,6 @@ class App(Ui_MainWindow, QObject):
         self.station_list_co.addItems(list(station_cameras.keys()))
 
     def update_station_list_so(self):
-        print("test")
         self.station_list_so.clear()
         stations = self.data.get_stations()
         self.station_list_so.addItems(stations)

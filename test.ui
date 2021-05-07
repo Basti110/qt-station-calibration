@@ -118,7 +118,7 @@
                 </widget>
                </item>
                <item>
-                <widget class="QPushButton" name="pushButton_3">
+                <widget class="QPushButton" name="edit_station_button">
                  <property name="text">
                   <string>Edit</string>
                  </property>

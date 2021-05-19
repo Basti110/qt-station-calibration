@@ -42,13 +42,13 @@ class DataManager(QObject):
 
     def __init__(self):
         super().__init__()
-        self._cameras = ["1", "2", "3", "4", "5", "6"]
+        self._cameras = {0: "cam1", 10: "cam2", 11: "cam3", 12: "cam4"}
         self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", 
             "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
-        self._stations = ["Hantelbank", "Cable Tower", "Test1", "Test2"]
-        self._station_cameras = {"Hantelbank" : ["1", "2"], "Cable Tower" : ["1", "3"]}
-        self._station_exercises = {"Hantelbank" : ["Bizeps-Curls", "Flys", "Unterarm-Curls"], \
-            "Cable Tower" : ["Cable Crossover", "Rumpf-Twist", "Seitheben"], "Test1" : [], "Test2" : []}
+        self._stations = {0: ['Hantelbank'], 10: ['Cable Tower'], 11: ['station_2']}
+        self._station_cameras = {0: [0, 10], 10: [0, 11]}
+        self._station_exercises = {0 : ["Bizeps-Curls", "Flys", "Unterarm-Curls"], \
+            10 : ["Cable Crossover", "Rumpf-Twist", "Seitheben"], "Test1" : [], "Test2" : []}
 
     def add_camera(self, camera_string):
         self._cameras.append(camera_string)
@@ -64,6 +64,18 @@ class DataManager(QObject):
 
     def remove_station(self, station_string):
         self._stations.remove(station_string)
+        self._station_cameras.pop(station_string, None)
+        self._station_exercises.pop(station_string, None)
+        self.stations_modified.emit()
+
+    def edit_station(self, station_string, new_name):
+        if station_string not in self._stations: 
+            return
+        index = self._stations.index(station_string)
+        self._stations.remove(station_string)
+        self._stations.insert(index, new_name)
+        self._station_cameras[new_name] = self._station_cameras.pop(station_string)
+        self._station_exercises[new_name] = self._station_exercises.pop(station_string)
         self.stations_modified.emit()
 
     def add_camera_to_station(self, station_string, camera_string):
@@ -276,12 +288,14 @@ class App(Ui_MainWindow, QObject):
     def station_edit_dialog_finished(self, result):
         if result != 1:
             return
-        text = self.station_add_ui.sation_name_edit.text()
+        text = self.station_edit_ui.sation_name_edit.text()
         if not text:
             self.log_error("Empty Strings are not allowed")
             return
-        self.data.add_station(text)
-        self.log_info(f"Added new Station: {text}")
+        selected_station = self.station_list_so.selectedItems()[0]
+        #print(selected_station.text())
+        self.log_info(f"Changed station \"{selected_station.text()}\" to \"{text}\"")
+        self.data.edit_station(selected_station.text(), text)
 
     @pyqtSlot()
     def add_station(self):
@@ -392,7 +406,8 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot()
     def add_suggestion_clicked(self):
         selected_station = self.station_list_so.selectedItems()
-        if selected_station is None:
+        if not selected_station:
+            self.log_warning("Select a Station first")
             return
         selected_station = selected_station[0]
         items = self.suggestion_list.selectedItems()
@@ -431,6 +446,12 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot()
     def remove_station_clicked(self):
+        selected_station = self.station_list_so.selectedItems()
+        if not selected_station:
+            self.log_warning("Select a Station first")
+            return
+        selected_station = selected_station[0]
+        self.data.remove_station(selected_station.text())
         self.station_edit_dialog.close()
 
     @pyqtSlot(np.ndarray)
@@ -501,7 +522,7 @@ class App(Ui_MainWindow, QObject):
 
         if index == 0:
             station_cameras = self.data.get_station_cameras()
-            cameras = self.data.get_cameras()
+            cameras = self.data.get_cameras().keys()
             items = []
             if selected_station.text() in station_cameras:
                 items = station_cameras[selected_station.text()]

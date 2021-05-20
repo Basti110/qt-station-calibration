@@ -3,7 +3,7 @@ import time
 from PyQt5 import QtGui, uic
 from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QListWidgetItem, QDialog
 from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QObject
-from PyQt5.QtGui import QPixmap, QColor
+from PyQt5.QtGui import QPixmap, QColor, QImage
 import cv2
 import numpy as np
 import psycopg2
@@ -70,7 +70,7 @@ class DataManager(QObject):
     def __init__(self):
         super().__init__()
         #self._cameras = {0: ["cam1"], 10: ["cam2"], 11: ["cam3"], 12: ["cam4"]}
-        self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", 
+        self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist",
             "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
         self._stations = None
         self._cameras = None
@@ -151,7 +151,7 @@ class DataManager(QObject):
         self.stations_modified.emit()
 
     def edit_station(self, station_string, new_name):
-        if station_string not in self._stations: 
+        if station_string not in self._stations:
             return
         index = self._stations.index(station_string)
         self._stations.remove(station_string)
@@ -240,7 +240,7 @@ class VideoThread(QThread):
         #cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
         while True:
-            if self.screen_mode: 
+            if self.screen_mode:
                 self.take_screens()
                 self.screen_mode = False
                 continue
@@ -260,7 +260,7 @@ class VideoThread(QThread):
                 s_point = tuple(self.start_point[2])
                 e_point = (self.start_point[2][0] + self.length[2][0], self.start_point[2][1] + self.length[2][1])
                 screen = self.screen3
-            if screen is not None: 
+            if screen is not None:
                 cv_img = screen
                 ret = True
             else:
@@ -281,19 +281,19 @@ class VideoThread(QThread):
                 time.sleep(0.016)
 
     def take_screens(self):
-        ret, self.screen1 = self.cap1.read()
-        ret, self.screen2 = self.cap2.read()
-        ret, self.screen3 = self.cap3.read()
+        _, self.screen1 = self.cap1.read()
+        _, self.screen2 = self.cap2.read()
+        _, self.screen3 = self.cap3.read()
 
 
 class App(Ui_MainWindow, QObject):
     def __init__(self):
         super().__init__()
         self.app = QApplication(sys.argv)
-        self.mainWindow = QMainWindow()
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self.mainWindow)
-        self.setupUi(self.mainWindow)
+        self.main_window = QMainWindow()
+        self.gui = Ui_MainWindow()
+        self.gui.setupUi(self.main_window)
+        self.setupUi(self.main_window)
         self.disply_width = 640
         self.display_height = 480
         self.image_label.setScaledContents(True)
@@ -418,7 +418,7 @@ class App(Ui_MainWindow, QObject):
             return
         index = self.thread.video_id
 
-        bbox = self.thread.start_point[index] + self.thread.length[index] 
+        bbox = self.thread.start_point[index] + self.thread.length[index]
         width_center = bbox[0] + (bbox[2] / 2)
         height_center = bbox[1] + (bbox[3] / 2)
         slider1_value = int((width_center * 100) / self.disply_width)
@@ -550,14 +550,14 @@ class App(Ui_MainWindow, QObject):
     def convert_cv_qt(self, cv_img):
         """Convert from an opencv image to QPixmap"""
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        convert_to_Qt_format = QtGui.QImage(rgb_image.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
-        p = convert_to_Qt_format.scaled(self.disply_width, self.display_height, Qt.KeepAspectRatio)
-        return QPixmap.fromImage(p)
+        height, width, channel = rgb_image.shape
+        bytes_per_line = channel * width
+        convert_to_qt_format = QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        pixmap = convert_to_qt_format.scaled(self.disply_width, self.display_height, Qt.KeepAspectRatio)
+        return QPixmap.fromImage(pixmap)
 
     def show(self):
-        self.mainWindow.show()
+        self.main_window.show()
         sys.exit(self.app.exec_())
 
     def log_info(self, msg):
@@ -616,8 +616,8 @@ class App(Ui_MainWindow, QObject):
             if station_index in station_cameras:
                 camera_ids = station_cameras[station_index]
                 items = [self.data.get_camera_string(i) for i in camera_ids]
-                self.setting_list.addItems(items)      
-            suggestion = [self.data.get_camera_string(i) for i in cameras if i not in camera_ids]          
+                self.setting_list.addItems(items)
+            suggestion = [self.data.get_camera_string(i) for i in cameras if i not in camera_ids]
             self.suggestion_list.addItems(suggestion)
         else:
             station_exercises = self.data.get_station_exercises()
@@ -637,7 +637,6 @@ class App(Ui_MainWindow, QObject):
                 return
             selected_station = selected_items[0]
 
-        
         station_cameras = self.data.get_station_cameras()
         station = int(selected_station.data(Qt.UserRole))
 

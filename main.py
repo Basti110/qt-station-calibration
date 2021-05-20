@@ -6,6 +6,7 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QObject
 from PyQt5.QtGui import QPixmap, QColor
 import cv2
 import numpy as np
+import psycopg2
 from layout import Ui_MainWindow
 from dialog_station_add import Ui_Dialog as StationAddDialogUI
 from dialog_station_edit import Ui_Dialog as StationEditDialogUI
@@ -68,13 +69,68 @@ class DataManager(QObject):
 
     def __init__(self):
         super().__init__()
-        self._cameras = {0: ["cam1"], 10: ["cam2"], 11: ["cam3"], 12: ["cam4"]}
+        #self._cameras = {0: ["cam1"], 10: ["cam2"], 11: ["cam3"], 12: ["cam4"]}
         self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", 
             "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
-        self._stations = {0: ['Hantelbank'], 10: ['Cable Tower'], 11: ['station_2']}
-        self._station_cameras = {0: [0, 10], 10: [0, 11]}
-        self._station_exercises = {0 : ["Bizeps-Curls", "Flys", "Unterarm-Curls"], \
-            10 : ["Cable Crossover", "Rumpf-Twist", "Seitheben"], "Test1" : [], "Test2" : []}
+        self._stations = None
+        self._cameras = None
+        self._station_exercises = None
+        #self._stations = {0: ['Hantelbank'], 10: ['Cable Tower'], 11: ['station_2']}
+        #self._station_cameras = {0: [0, 10], 10: [0, 11]}
+        self._station_exercises = {}
+
+        try:
+            self.connection = psycopg2.connect(user="ted",
+                                    password="esel1212",
+                                    host="127.0.0.1",
+                                    port="5432",
+                                    database="trainerai_db")
+            self.cursor = self.connection.cursor()
+        except psycopg2.Error as error:
+            raise RuntimeError('Failed to open database') from error
+
+        self.update_cameras()
+        self.update_stations()
+        self.update_station_cameras()
+
+    def update_cameras(self):
+        select_query = "select * from camera_list"
+        try:
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchall()
+            camera_list = {}
+            for row in mobile_records:
+                camera_list[row[0]] = [row[1]]
+            self._cameras = camera_list
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
+
+    def update_stations(self):
+        try:
+            select_query = "select * from station_list"
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchall()
+            station_list = {}
+            for row in mobile_records:
+                station_list[row[0]] = [row[1]]
+            self._stations = station_list
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
+
+    def update_station_cameras(self):
+        try:
+            select_query = "select * from camera_station_join"
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchall()
+
+            station_cameras = {}
+            for row in mobile_records:
+                if row[2] not in station_cameras:
+                    station_cameras[row[2]] = []
+                station_cameras[row[2]].append(row[1])
+            self._station_cameras = station_cameras
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
 
     def add_camera(self, camera_string):
         self._cameras.append(camera_string)

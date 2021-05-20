@@ -10,6 +10,32 @@ from layout import Ui_MainWindow
 from dialog_station_add import Ui_Dialog as StationAddDialogUI
 from dialog_station_edit import Ui_Dialog as StationEditDialogUI
 
+def make_items_from_dict(labels, index = 0):
+    """Qt item list with key as item data
+
+    Args:
+    labels (dict[int, list]): All dict entries are converted to items. The key are added as data
+    index (int): The index to the item label in the entry
+
+    Returns:
+    list[items]: A converted list of qt items
+    """
+    item_list = []
+    for key, value in labels.items():
+        item = QListWidgetItem()
+        item.setText(value[index])
+        item.setData(Qt.UserRole, int(key))
+        item_list.append(item)
+    return item_list
+
+def insert_items_into_widget(qt_widget, item_list):
+    for i in item_list:
+        qt_widget.addItem(i)
+
+def insert_dict_into_widget(qt_widget, label_dict, index = 0):
+    item_list = make_items_from_dict(label_dict, index)
+    insert_items_into_widget(qt_widget, item_list)
+
 class CountdownThread(QObject):
     finished = pyqtSignal()
     countdown = pyqtSignal(int)
@@ -42,7 +68,7 @@ class DataManager(QObject):
 
     def __init__(self):
         super().__init__()
-        self._cameras = {0: "cam1", 10: "cam2", 11: "cam3", 12: "cam4"}
+        self._cameras = {0: ["cam1"], 10: ["cam2"], 11: ["cam3"], 12: ["cam4"]}
         self._exercises = ["Bizeps-Curls", "Flys", "Unterarm-Curls", "Cable Crossover", "Rumpf-Twist", 
             "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
         self._stations = {0: ['Hantelbank'], 10: ['Cable Tower'], 11: ['station_2']}
@@ -113,6 +139,11 @@ class DataManager(QObject):
     def get_station_exercises(self):
         return self._station_exercises
 
+    def get_camera_string(self, index : int) -> str:
+        return self._cameras[index][0]
+
+    def get_station_string(self, index : int) -> str:
+        return self._stations[index][0]
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
@@ -220,13 +251,13 @@ class App(Ui_MainWindow, QObject):
         self.station_edit_ui = StationEditDialogUI()
         self.station_edit_ui.setupUi(self.station_edit_dialog)
 
+        #Fill Data into Gui
         self.overview_mode = 0
         self.configure = ["Camera", "Exercise"]
         self.configure_list.addItems(self.configure)
-        station_cameras = self.data.get_station_cameras()
-        stations = self.data.get_stations()
-        self.station_list_co.addItems(list(station_cameras.keys()))
-        self.station_list_so.addItems(stations)
+
+        self.update_station_list_co()
+        self.update_station_list_so()
 
         # Init Signal/Slots
         self.station_add_dialog.finished.connect(self.station_add_dialog_finished)
@@ -523,11 +554,14 @@ class App(Ui_MainWindow, QObject):
         if index == 0:
             station_cameras = self.data.get_station_cameras()
             cameras = self.data.get_cameras().keys()
-            items = []
-            if selected_station.text() in station_cameras:
-                items = station_cameras[selected_station.text()]
-            suggestion = [i for i in cameras if i not in items]
-            self.setting_list.addItems(items)
+            camera_ids = []
+            station_index = int(selected_station.data(Qt.UserRole))
+            print(station_index)
+            if station_index in station_cameras:
+                camera_ids = station_cameras[station_index]
+                items = [self.data.get_camera_string(i) for i in camera_ids]
+                self.setting_list.addItems(items)      
+            suggestion = [self.data.get_camera_string(i) for i in cameras if i not in camera_ids]          
             self.suggestion_list.addItems(suggestion)
         else:
             station_exercises = self.data.get_station_exercises()
@@ -547,20 +581,26 @@ class App(Ui_MainWindow, QObject):
                 return
             selected_station = selected_items[0]
 
+        
         station_cameras = self.data.get_station_cameras()
-        station = selected_station.text()
+        station = int(selected_station.data(Qt.UserRole))
+
         if station in station_cameras:
-            self.camera_list.addItems(station_cameras[selected_station.text()])
+            cameras = {i : [self.data.get_camera_string(i)] for i in station_cameras[station]}
+            insert_dict_into_widget(self.camera_list, cameras)
+            #self.camera_list.addItems(cameras)
 
     def update_station_list_co(self):
         self.station_list_co.clear()
         station_cameras = self.data.get_station_cameras()
-        self.station_list_co.addItems(list(station_cameras.keys()))
+        stations_with_cam = {i : [self.data.get_station_string(i)] for i in station_cameras}
+        insert_dict_into_widget(self.station_list_co, stations_with_cam)
+        #self.station_list_co.addItems(stations_with_cam)
 
     def update_station_list_so(self):
         self.station_list_so.clear()
         stations = self.data.get_stations()
-        self.station_list_so.addItems(stations)
+        insert_dict_into_widget(self.station_list_so, stations)
 
 if __name__=="__main__":
     a = App()

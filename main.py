@@ -269,13 +269,35 @@ class DataManager(QObject):
                 if not box.is_modified:
                     return
                 frame_id = box.frame_id
-                frame_box_str = f"\'({box.start[0]},{box.start[1]})({box.length[0]},{box.length[1]})\'"
+                end_point = (box.start[0] + box.length[0], box.start[1] + box.length[1])
+                frame_box_str = f"\'({box.start[0]},{box.start[1]})({end_point[0]},{end_point[1]})\'"
+                print(frame_box_str)
                 sql_query = \
                 "UPDATE frame_list " + \
                 f"SET frame_box = {frame_box_str} " + \
                 f"WHERE id = {frame_id};"
                 self.cursor.execute(sql_query)
                 box.is_modified = False
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
+
+    def add_new_frame(self, camera_id : int, station_id : int):
+        try:
+            select_query = f"SELECT id FROM camera_station_join WHERE camera_id = {camera_id} and station_id = {station_id}"
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchone()
+            cs_id = mobile_records[0]
+
+            select_query = \
+            "INSERT INTO frame_list(cs_id, frame_box) " + \
+            f"VALUES('{cs_id}', '((100, 100),(400,400))') " + \
+            "RETURNING id;"
+
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchone()
+            result_id = mobile_records[0]
+
+            self._frame_boxes[(camera_id, station_id)] = FrameBox(start=[100, 100], length=[300,300], frame_id=result_id)
         except psycopg2.Error as error:
             print("Error while fetching data from PostgreSQL", error)
 
@@ -464,6 +486,7 @@ class App(Ui_MainWindow, QObject):
         self.add_suggestion_button.clicked.connect(self.add_suggestion_clicked)
         self.remove_suggestion_button.clicked.connect(self.remove_suggestion_clicked)
         self.add_station_button.clicked.connect(self.add_station)
+        self.add_frame_button.clicked.connect(self.add_frame_clicked)
         self.edit_station_button.clicked.connect(self.edit_station)
         self.station_edit_ui.remove_button.clicked.connect(self.remove_station_clicked)
 
@@ -565,7 +588,7 @@ class App(Ui_MainWindow, QObject):
     def width_slider_moved(self):
         if not self.thread.box_is_active:
             return
-        
+
         frame = self.thread.selected_frame
         if frame is None:
             return
@@ -705,6 +728,23 @@ class App(Ui_MainWindow, QObject):
         station_index = int(selected_station.data(Qt.UserRole))
         self.data.remove_station(station_index)
         self.station_edit_dialog.close()
+
+    @pyqtSlot()
+    def add_frame_clicked(self):
+        selected_items = self.station_list_co.selectedItems()
+        if not selected_items:
+            return
+        selected_station = selected_items[0]
+        station_index = int(selected_station.data(Qt.UserRole))
+
+
+        selected_items = self.camera_list.selectedItems()
+        if not selected_items:
+            return
+        selected_camera = selected_items[0]
+        camera_index = int(selected_camera.data(Qt.UserRole))
+
+        self.data.add_new_frame(camera_index, station_index)
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img):

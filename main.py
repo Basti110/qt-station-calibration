@@ -14,6 +14,9 @@ from layout import Ui_MainWindow
 from dialog_station_add import Ui_Dialog as StationAddDialogUI
 from dialog_station_edit import Ui_Dialog as StationEditDialogUI
 
+# Todo: frame {(c_id, s_id): FrameBox} => {c_id : (s_id): FrameBox}
+# Todo: do not iterate over frame boxes! Mapping Frame ID to FrameBoxes
+
 def make_items_from_dict(labels, index = 0):
     """Qt item list with key as item data
 
@@ -169,7 +172,7 @@ class DataManager(QObject):
                 box_size = make_tuple("(" + row[3] + ")")
                 box_start = box_size[1]
                 box_len = (box_size[0][0] - box_size[1][0], box_size[0][1] - box_size[1][1])
-                box = FrameBox(start=box_start, length=box_len, frame_id=row[0])
+                box = FrameBox(start=list(box_start), length=list(box_len), frame_id=row[0])
                 frame_boxes[(row[1], row[2])] = box
                 #print(make_tuple("(" + row[3] + ")")[0])
             self._frame_boxes = frame_boxes
@@ -286,16 +289,19 @@ class DataManager(QObject):
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
-    def __init__(self):
+    def __init__(self, data = None):
         super().__init__()
+        self.data = data
         self.video_id = 0
         self.start_point = [[230, 5], [280, 25], [280, 25]]
         self.length = [[230, 470], [200, 415], [200, 415]]
         self.box_is_active = False
         self.color1 = (0, 255, 0)
+        self.color2 = (255, 0, 0)
         self.countdown = 0
         self.cam_is_busy = False
         self.screen_mode = False
+        self.selected_frame = None
 
         self.cap1 = cv2.VideoCapture("./out1.avi")
         self.cap1.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -328,21 +334,40 @@ class VideoThread(QThread):
                 self.screen_mode = False
                 continue
 
-            if self.video_id == 0:
-                cap = self.cap1
-                s_point = tuple(self.start_point[0])
-                e_point = (self.start_point[0][0] + self.length[0][0], self.start_point[0][1] + self.length[0][1])
-                screen = self.screen1
-            elif self.video_id == 1:
-                cap = self.cap2
-                s_point = tuple(self.start_point[1])
-                e_point = (self.start_point[1][0] + self.length[1][0], self.start_point[1][1] + self.length[1][1])
-                screen = self.screen2
-            else:
-                cap = self.cap3
-                s_point = tuple(self.start_point[2])
-                e_point = (self.start_point[2][0] + self.length[2][0], self.start_point[2][1] + self.length[2][1])
-                screen = self.screen3
+            #if self.video_id == 0:
+            cap = self.cap1
+
+            stations = self.data.get_station_cameras().keys()
+            frames = self.data.get_frame_boxes()
+
+            s_points = []
+            e_points = []
+            selection_index = -1
+            for station in stations:
+                if (self.video_id, station) in frames:
+                    frame_box = frames[(self.video_id, station)]
+                    start = frame_box.start
+                    end = (start[0] + frame_box.length[0], start[1] + frame_box.length[1])
+                    s_points.append(tuple(frame_box.start))
+                    e_points.append(end)
+                    if self.selected_frame is not None:
+                        #print(self.selected_frame)
+                        if(frame_box.frame_id == self.selected_frame.frame_id):
+                            selection_index = len(s_points) - 1
+
+            #s_points = tuple(self.start_point[0])
+            #e_points = (self.start_point[0][0] + self.length[0][0], self.start_point[0][1] + self.length[0][1])
+            screen = self.screen1
+            # elif self.video_id == 1:
+            #     cap = self.cap2
+            #     s_point = tuple(self.start_point[1])
+            #     e_point = (self.start_point[1][0] + self.length[1][0], self.start_point[1][1] + self.length[1][1])
+            #     screen = self.screen2
+            # else:
+            #     cap = self.cap3
+            #     s_point = tuple(self.start_point[2])
+            #     e_point = (self.start_point[2][0] + self.length[2][0], self.start_point[2][1] + self.length[2][1])
+            #     screen = self.screen3
             if screen is not None:
                 cv_img = screen
                 ret = True
@@ -357,7 +382,12 @@ class VideoThread(QThread):
             if ret:
                 cv_img = cv2.resize(cv_img, (640, 480))
                 if self.box_is_active:
-                    cv_img = cv2.rectangle(cv_img, s_point, e_point, self.color1, 3)
+                    for i, s_point in enumerate(s_points):
+                        e_point = e_points[i]
+                        if i == selection_index:
+                            cv_img = cv2.rectangle(cv_img, s_point, e_point, self.color2, 3)
+                        else:
+                            cv_img = cv2.rectangle(cv_img, s_point, e_point, self.color1, 3)
                 if self.countdown > 0:
                     cv2.putText(cv_img,f"{self.countdown}", (320,240), cv2.FONT_HERSHEY_SIMPLEX, 5, 255, thickness=10)
                 self.change_pixmap_signal.emit(cv_img)
@@ -404,7 +434,7 @@ class App(Ui_MainWindow, QObject):
 
         self.station_list_co.itemClicked.connect(self.station_list_co_clicked)
         self.station_list_so.itemClicked.connect(self.station_list_so_clicked)
-        self.camera_list.itemClicked.connect(self.update_frame_list)
+        self.frame_list.itemClicked.connect(self.frame_list_clicked)
         self.configure_list.itemClicked.connect(self.configure_list_clicked)
         self.camera_list.itemClicked.connect(self.camera_list_clicked)
         self.compute_box_button.clicked.connect(self.compute_box_clicked)
@@ -428,7 +458,7 @@ class App(Ui_MainWindow, QObject):
         self.data.stations_exercises_modified.connect(self.stations_exercises_modified)
 
         # Init Threads
-        self.thread = VideoThread()
+        self.thread = VideoThread(self.data)
         self.thread.change_pixmap_signal.connect(self.update_image)
         self.thread.start()
 
@@ -500,39 +530,48 @@ class App(Ui_MainWindow, QObject):
     def set_slider_values(self):
         if not self.thread.box_is_active:
             return
-        index = self.thread.video_id
 
-        bbox = self.thread.start_point[index] + self.thread.length[index]
+        frame = self.thread.selected_frame
+        if frame is None:
+            return
+
+        bbox = frame.start + frame.length #self.thread.start_point[index] + self.thread.length[index]
         width_center = bbox[0] + (bbox[2] / 2)
         height_center = bbox[1] + (bbox[3] / 2)
         slider1_value = int((width_center * 100) / self.disply_width)
         slider2_value = int((height_center * 100) / self.display_height)
         self.width_slider.setValue(slider1_value)
         self.height_slider.setValue(slider2_value)
-        self.width_box.setValue(self.thread.length[index][0])
-        self.height_box.setValue(self.thread.length[index][1])
+        self.width_box.setValue(frame.length[0])
+        self.height_box.setValue(frame.length[1])
 
     @pyqtSlot()
     def width_slider_moved(self):
         if not self.thread.box_is_active:
             return
-        index = self.thread.video_id
-
-        bbox = self.thread.start_point[index] + self.thread.length[index]
+        
+        frame = self.thread.selected_frame
+        if frame is None:
+            return
+        print(frame)
+        bbox = frame.start + frame.length #self.thread.start_point[index] + self.thread.length[index]
         half_width = bbox[2] / 2
         start = (self.width_slider.value() * (self.disply_width / 100)) - half_width
-        self.thread.start_point[index][0] = int(start)
+        frame.start[0] = int(start)
 
     @pyqtSlot()
     def height_slider_moved(self):
         if not self.thread.box_is_active:
             return
-        index = self.thread.video_id
 
-        bbox = self.thread.start_point[index] + self.thread.length[index]
+        frame = self.thread.selected_frame
+        if frame is None:
+            return
+
+        bbox = frame.start + frame.length #self.thread.start_point[index] + self.thread.length[index]
         half_height = bbox[3] / 2
         start = (self.height_slider.value() * (self.display_height / 100)) - half_height
-        self.thread.start_point[index][1] = int(start)
+        frame.start[1] = int(start)
 
     @pyqtSlot(int)
     def width_box_changed(self, value):
@@ -573,7 +612,19 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot(QListWidgetItem)
     def camera_list_clicked(self, item):
-        self.thread.video_id = 0
+        camera_index = int(item.data(Qt.UserRole))
+        self.thread.video_id = camera_index
+        self.update_frame_list()
+
+    @pyqtSlot(QListWidgetItem)
+    def frame_list_clicked(self, item):
+        frame_index = int(item.data(Qt.UserRole))
+        boxes = self.data.get_frame_boxes()
+        for box in boxes.values():
+            if box.frame_id == frame_index:
+                self.thread.selected_frame = box
+                break
+        self.set_slider_values()
 
     @pyqtSlot()
     def add_suggestion_clicked(self):
@@ -744,17 +795,18 @@ class App(Ui_MainWindow, QObject):
         stations = self.data.get_stations()
         insert_dict_into_widget(self.station_list_so, stations)
 
-    def update_frame_list(self):
+    def update_frame_list(self, selected_camera = None):
         self.frame_list.clear()
+        self.thread.selected_frame = None
         # selected_items = self.station_list_co.selectedItems()
         # if not selected_items:
         #     return
         # selected_station = selected_items[0]
-
-        selected_items = self.camera_list.selectedItems()
-        if not selected_items:
-            return
-        selected_camera = selected_items[0]
+        if selected_camera is None:
+            selected_items = self.camera_list.selectedItems()
+            if not selected_items:
+                return
+            selected_camera = selected_items[0]
 
         stations = self.data.get_station_cameras().keys()
         frames = self.data.get_frame_boxes()

@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import psycopg2
 from layout import Ui_MainWindow
+from dataclasses import dataclass
 from dialog_station_add import Ui_Dialog as StationAddDialogUI
 from dialog_station_edit import Ui_Dialog as StationEditDialogUI
 
@@ -36,6 +37,11 @@ def insert_items_into_widget(qt_widget, item_list):
 def insert_dict_into_widget(qt_widget, label_dict, index = 0):
     item_list = make_items_from_dict(label_dict, index)
     insert_items_into_widget(qt_widget, item_list)
+
+@dataclass
+class FrameBox:
+    point1 = (int(0), int(0))
+    point2 = (int(0), int(0))
 
 class CountdownThread(QObject):
     finished = pyqtSignal()
@@ -74,9 +80,13 @@ class DataManager(QObject):
             "Seitheben", "Schulterdrücken", "Kurzhanteln-Rudern"]
         self._stations = None
         self._cameras = None
-        self._station_exercises = None
+        self._station_cameras = None
+        self._frame_boxes = None
         #self._stations = {0: ['Hantelbank'], 10: ['Cable Tower'], 11: ['station_2']}
         #self._station_cameras = {0: [0, 10], 10: [0, 11]}
+        #self._station_cameras_ids = {0: [0, 10], 10: [0, 11]}
+        #self._frame_boxes = {(0,0): FrameBox}
+
         self._station_exercises = {}
 
         try:
@@ -92,6 +102,11 @@ class DataManager(QObject):
         self.update_cameras()
         self.update_stations()
         self.update_station_cameras()
+        self.update_frame_boxes()
+
+    def __del__(self):
+        self.cursor.close()
+        self.connection.close()
 
     def update_cameras(self):
         select_query = "select * from camera_list"
@@ -132,23 +147,67 @@ class DataManager(QObject):
         except psycopg2.Error as error:
             print("Error while fetching data from PostgreSQL", error)
 
-    def add_camera(self, camera_string):
-        self._cameras.append(camera_string)
-        self.cameras_modified.emit()
+    def update_frame_boxes(self):
+        select_query = "SELECT camera_station_join.camera_id, camera_station_join.station_id, frame_list.frame " + \
+        "FROM camera_station_join " + \
+        "INNER JOIN frame_list ON camera_station_join.id=frame_list.id;"
+        try:
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchall()
+            frame_boxes = {}
+            for row in mobile_records:
+                frame_boxes[(row[0], row[1])] = row[2]
+            self._frame_boxes = frame_boxes
+            print(self._frame_boxes)
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
 
-    def remove_camera(self, camera_string):
-        self._cameras.remove(camera_string)
-        self.cameras_modified.emit()
+    def add_camera(self, camera_string : str):
+        try:
+            select_query = f"INSERT INTO camera_list(name) VALUES('{camera_string}') RETURNING id;"
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchone()
+            result_id = mobile_records[0]
+            self._cameras[result_id] = [camera_string]
+            self.cameras_modified.emit()
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
 
-    def add_station(self, station_string):
-        self._stations.append(station_string)
-        self.stations_modified.emit()
+    def remove_camera(self, camera_id : int):
+        try:
+            select_query = f"DELETE FROM camera_list WHERE id={camera_id};"
+            self.cursor.execute(select_query)
+            self._cameras.pop(camera_id, None)
+            self.cameras_modified.emit()
 
-    def remove_station(self, station_string):
-        self._stations.remove(station_string)
-        self._station_cameras.pop(station_string, None)
-        self._station_exercises.pop(station_string, None)
-        self.stations_modified.emit()
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
+
+
+    def add_station(self, station_string : str):
+        try:
+            select_query = f"INSERT INTO station_list(name) VALUES('{station_string}') RETURNING id;"
+            self.cursor.execute(select_query)
+            mobile_records = self.cursor.fetchone()
+            result_id = mobile_records[0]
+            self._stations[result_id] = [station_string]
+            self.stations_modified.emit()
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
+
+    def remove_station(self, station_id : int):
+        try:
+            select_query = f"DELETE FROM station_list WHERE id={station_id};"
+            self.cursor.execute(select_query)
+            self._stations.pop(station_id, None)
+            select_query = f"DELETE FROM camera_station_join WHERE station_id={station_id};"
+            self.cursor.execute(select_query)
+            self._station_cameras.pop(station_id, None)
+            self._station_exercises.pop(station_id, None)
+            self.stations_modified.emit()
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
+
 
     def edit_station(self, station_string, new_name):
         if station_string not in self._stations:
@@ -160,11 +219,17 @@ class DataManager(QObject):
         self._station_exercises[new_name] = self._station_exercises.pop(station_string)
         self.stations_modified.emit()
 
-    def add_camera_to_station(self, station_string, camera_string):
-        if station_string not in self._station_cameras:
-            self._station_cameras[station_string] = []
-        self._station_cameras[station_string].append(camera_string) #self._cameras[exercise_id])
-        self.stations_cameras_modified.emit()
+    def add_camera_to_station(self, station_id : int, camera_id : int):
+        try:
+            select_query = "INSERT INTO camera_station_join(camera_id, station_id)" + \
+                            f"VALUES('{camera_id}', '{station_id}');"
+            self.cursor.execute(select_query)
+            if station_id not in self._station_cameras:
+                self._station_cameras[station_id] = []
+            self._station_cameras[station_id].append(camera_id) #self._cameras[exercise_id])
+            self.stations_cameras_modified.emit()
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
 
     def remove_camera_from_station(self, station_string, camera_string):
         self._station_cameras[station_string].remove(camera_string) #self._cameras[exercise_id])
@@ -529,6 +594,7 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot()
     def save_button_clicked(self):
+        self.data.connection.commit()
         self.log_info("Data stored into yaml files")
 
     @pyqtSlot()
@@ -538,7 +604,8 @@ class App(Ui_MainWindow, QObject):
             self.log_warning("Select a Station first")
             return
         selected_station = selected_station[0]
-        self.data.remove_station(selected_station.text())
+        station_index = int(selected_station.data(Qt.UserRole))
+        self.data.remove_station(station_index)
         self.station_edit_dialog.close()
 
     @pyqtSlot(np.ndarray)

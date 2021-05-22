@@ -263,6 +263,22 @@ class DataManager(QObject):
         self._station_exercises[station_string].remove(exercise_string) #self._exercises[exercise_id])
         self.stations_exercises_modified.emit()
 
+    def store_frames_to_database(self):
+        try:
+            for box in self._frame_boxes.values():
+                if not box.is_modified:
+                    return
+                frame_id = box.frame_id
+                frame_box_str = f"\'({box.start[0]},{box.start[1]})({box.length[0]},{box.length[1]})\'"
+                sql_query = \
+                "UPDATE frame_list " + \
+                f"SET frame_box = {frame_box_str} " + \
+                f"WHERE id = {frame_id};"
+                self.cursor.execute(sql_query)
+                box.is_modified = False
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
+
     def get_cameras(self):
         return self._cameras
 
@@ -558,6 +574,7 @@ class App(Ui_MainWindow, QObject):
         half_width = bbox[2] / 2
         start = (self.width_slider.value() * (self.disply_width / 100)) - half_width
         frame.start[0] = int(start)
+        frame.is_modified = True
 
     @pyqtSlot()
     def height_slider_moved(self):
@@ -572,23 +589,32 @@ class App(Ui_MainWindow, QObject):
         half_height = bbox[3] / 2
         start = (self.height_slider.value() * (self.display_height / 100)) - half_height
         frame.start[1] = int(start)
+        frame.is_modified = True
 
     @pyqtSlot(int)
     def width_box_changed(self, value):
         if not self.thread.box_is_active:
             return
-        index = self.thread.video_id
 
-        self.thread.length[index][0] = value
+        frame = self.thread.selected_frame
+        if frame is None:
+            return
+
+        frame.length[0] = value
+        frame.is_modified = True
         self.set_slider_values()
 
     @pyqtSlot(int)
     def height_box_changed(self, value):
         if not self.thread.box_is_active:
             return
-        index = self.thread.video_id
 
-        self.thread.length[index][1] = value
+        frame = self.thread.selected_frame
+        if frame is None:
+            return
+
+        frame.length[1] = value
+        frame.is_modified = True
         self.set_slider_values()
 
     @pyqtSlot(int)
@@ -665,8 +691,9 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot()
     def save_button_clicked(self):
+        self.data.store_frames_to_database()
         self.data.connection.commit()
-        self.log_info("Data stored into yaml files")
+        self.log_info("Data stored to database")
 
     @pyqtSlot()
     def remove_station_clicked(self):

@@ -1,5 +1,8 @@
 import sys
 import time
+from dataclasses import dataclass
+from typing import List
+from ast import literal_eval as make_tuple
 from PyQt5 import QtGui, uic
 from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QListWidgetItem, QDialog
 from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread, QObject
@@ -8,7 +11,6 @@ import cv2
 import numpy as np
 import psycopg2
 from layout import Ui_MainWindow
-from dataclasses import dataclass
 from dialog_station_add import Ui_Dialog as StationAddDialogUI
 from dialog_station_edit import Ui_Dialog as StationEditDialogUI
 
@@ -38,10 +40,18 @@ def insert_dict_into_widget(qt_widget, label_dict, index = 0):
     item_list = make_items_from_dict(label_dict, index)
     insert_items_into_widget(qt_widget, item_list)
 
-@dataclass
+# @dataclass
+# class FrameBox:
+#     point1 = (int(0), int(0))
+#     point2 = (int(0), int(0))
+
+@dataclass(init=True)
 class FrameBox:
-    point1 = (int(0), int(0))
-    point2 = (int(0), int(0))
+    start : List[int]
+    length : List[int]
+    frame_id : int = int(-1)
+    is_modified = False
+    is_new = False
 
 class CountdownThread(QObject):
     finished = pyqtSignal()
@@ -86,7 +96,6 @@ class DataManager(QObject):
         #self._station_cameras = {0: [0, 10], 10: [0, 11]}
         #self._station_cameras_ids = {0: [0, 10], 10: [0, 11]}
         #self._frame_boxes = {(0,0): FrameBox}
-
         self._station_exercises = {}
 
         try:
@@ -148,15 +157,21 @@ class DataManager(QObject):
             print("Error while fetching data from PostgreSQL", error)
 
     def update_frame_boxes(self):
-        select_query = "SELECT camera_station_join.camera_id, camera_station_join.station_id, frame_list.frame " + \
+        select_query = "SELECT frame_list.id, camera_station_join.camera_id, camera_station_join.station_id, frame_list.frame_box " + \
         "FROM camera_station_join " + \
-        "INNER JOIN frame_list ON camera_station_join.id=frame_list.id;"
+        "INNER JOIN frame_list ON camera_station_join.id=frame_list.cs_id;"
+        #self._frame_boxes = {(0,0): FrameBox}
         try:
             self.cursor.execute(select_query)
             mobile_records = self.cursor.fetchall()
             frame_boxes = {}
             for row in mobile_records:
-                frame_boxes[(row[0], row[1])] = row[2]
+                box_size = make_tuple("(" + row[3] + ")")
+                box_start = box_size[1]
+                box_len = (box_size[0][0] - box_size[1][0], box_size[0][1] - box_size[1][1])
+                box = FrameBox(start=box_start, length=box_len, frame_id=row[0])
+                frame_boxes[(row[1], row[2])] = box
+                #print(make_tuple("(" + row[3] + ")")[0])
             self._frame_boxes = frame_boxes
             print(self._frame_boxes)
         except psycopg2.Error as error:
@@ -265,6 +280,9 @@ class DataManager(QObject):
 
     def get_station_string(self, index : int) -> str:
         return self._stations[index][0]
+
+    def get_frame_boxes(self):
+        return self._frame_boxes
 
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
@@ -386,6 +404,7 @@ class App(Ui_MainWindow, QObject):
 
         self.station_list_co.itemClicked.connect(self.station_list_co_clicked)
         self.station_list_so.itemClicked.connect(self.station_list_so_clicked)
+        self.camera_list.itemClicked.connect(self.update_frame_list)
         self.configure_list.itemClicked.connect(self.configure_list_clicked)
         self.camera_list.itemClicked.connect(self.camera_list_clicked)
         self.compute_box_button.clicked.connect(self.compute_box_clicked)
@@ -540,6 +559,7 @@ class App(Ui_MainWindow, QObject):
     @pyqtSlot(QListWidgetItem)
     def station_list_co_clicked(self, item):
         self.update_camera_list(item)
+        self.update_frame_list()
 
     @pyqtSlot(QListWidgetItem)
     def station_list_so_clicked(self, item):
@@ -553,7 +573,7 @@ class App(Ui_MainWindow, QObject):
 
     @pyqtSlot(QListWidgetItem)
     def camera_list_clicked(self, item):
-        self.thread.video_id = int(item.text()) - 1
+        self.thread.video_id = 0
 
     @pyqtSlot()
     def add_suggestion_clicked(self):
@@ -723,6 +743,31 @@ class App(Ui_MainWindow, QObject):
         self.station_list_so.clear()
         stations = self.data.get_stations()
         insert_dict_into_widget(self.station_list_so, stations)
+
+    def update_frame_list(self):
+        self.frame_list.clear()
+        # selected_items = self.station_list_co.selectedItems()
+        # if not selected_items:
+        #     return
+        # selected_station = selected_items[0]
+
+        selected_items = self.camera_list.selectedItems()
+        if not selected_items:
+            return
+        selected_camera = selected_items[0]
+
+        stations = self.data.get_station_cameras().keys()
+        frames = self.data.get_frame_boxes()
+        camera_index = int(selected_camera.data(Qt.UserRole))
+
+        frame_dict = {}
+        for station in stations:
+            if (camera_index, station) in frames:
+                frame_string = f"Frame Station {station}"
+                frame_id = frames[(camera_index, station)].frame_id
+                frame_dict[frame_id] = [frame_string]
+
+        insert_dict_into_widget(self.frame_list, frame_dict)
 
 if __name__=="__main__":
     a = App()

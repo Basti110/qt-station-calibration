@@ -16,6 +16,7 @@ from dialog_station_edit import Ui_Dialog as StationEditDialogUI
 
 # Todo: frame {(c_id, s_id): FrameBox} => {c_id : (s_id): FrameBox}
 # Todo: do not iterate over frame boxes! Mapping Frame ID to FrameBoxes
+# Todo: Größe auf 720p anpassen
 
 def make_items_from_dict(labels, index = 0):
     """Qt item list with key as item data
@@ -215,11 +216,11 @@ class DataManager(QObject):
 
     def remove_station(self, station_id : int):
         try:
+            select_query = f"DELETE FROM camera_station_join WHERE station_id={station_id};"
+            self.cursor.execute(select_query)
             select_query = f"DELETE FROM station_list WHERE id={station_id};"
             self.cursor.execute(select_query)
             self._stations.pop(station_id, None)
-            select_query = f"DELETE FROM camera_station_join WHERE station_id={station_id};"
-            self.cursor.execute(select_query)
             self._station_cameras.pop(station_id, None)
             self._station_exercises.pop(station_id, None)
             self.stations_modified.emit()
@@ -239,7 +240,7 @@ class DataManager(QObject):
 
     def add_camera_to_station(self, station_id : int, camera_id : int):
         try:
-            select_query = "INSERT INTO camera_station_join(camera_id, station_id)" + \
+            select_query = "INSERT INTO camera_station_join(camera_id, station_id) " + \
                             f"VALUES('{camera_id}', '{station_id}');"
             self.cursor.execute(select_query)
             if station_id not in self._station_cameras:
@@ -249,9 +250,14 @@ class DataManager(QObject):
         except psycopg2.Error as error:
             print("Error while fetching data from PostgreSQL", error)
 
-    def remove_camera_from_station(self, station_string, camera_string):
-        self._station_cameras[station_string].remove(camera_string) #self._cameras[exercise_id])
-        self.stations_cameras_modified.emit()
+    def remove_camera_from_station(self, station_id : int, camera_id : int):
+        try:
+            select_query = f"DELETE FROM camera_station_join WHERE station_id={station_id} and camera_id={camera_id};"
+            self.cursor.execute(select_query)
+            self._station_cameras[station_id].remove(camera_id) #self._cameras[exercise_id])
+            self.stations_cameras_modified.emit()
+        except psycopg2.Error as error:
+            print("Error while fetching data from PostgreSQL", error)
 
     def add_exercise_to_station(self, station_string, exercise_string):
         if station_string not in self._station_exercises:
@@ -687,7 +693,9 @@ class App(Ui_MainWindow, QObject):
         if items:
             item = items[0]
             if self.overview_mode == 0:
-                self.data.add_camera_to_station(selected_station.text(), item.text())
+                camera_index = int(item.data(Qt.UserRole))
+                station_index = int(selected_station.data(Qt.UserRole))
+                self.data.add_camera_to_station(station_index, camera_index)
             else:
                 self.data.add_exercise_to_station(selected_station.text(), item.text())
 
@@ -703,7 +711,9 @@ class App(Ui_MainWindow, QObject):
         if items:
             item = items[0]
             if self.overview_mode == 0:
-                self.data.remove_camera_from_station(selected_station.text(), item.text())
+                camera_index = int(item.data(Qt.UserRole))
+                station_index = int(selected_station.data(Qt.UserRole))
+                self.data.remove_camera_from_station(station_index, camera_index)
             else:
                 self.data.remove_exercise_from_station(selected_station.text(), item.text())
 
@@ -820,10 +830,12 @@ class App(Ui_MainWindow, QObject):
             print(station_index)
             if station_index in station_cameras:
                 camera_ids = station_cameras[station_index]
-                items = [self.data.get_camera_string(i) for i in camera_ids]
-                self.setting_list.addItems(items)
-            suggestion = [self.data.get_camera_string(i) for i in cameras if i not in camera_ids]
-            self.suggestion_list.addItems(suggestion)
+                items = {i : [self.data.get_camera_string(i)] for i in camera_ids}
+                insert_dict_into_widget(self.setting_list, items)
+                #self.setting_list.addItems(items)
+            suggestion = {i : [self.data.get_camera_string(i)] for i in cameras if i not in camera_ids}
+            insert_dict_into_widget(self.suggestion_list, suggestion)
+            #self.suggestion_list.addItems(suggestion)
         else:
             station_exercises = self.data.get_station_exercises()
             exercises = self.data.get_exercises()
